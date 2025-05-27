@@ -11,6 +11,7 @@ import '../../../widgets/quick_action_fab.dart';
 import '../../../widgets/notification_badge.dart';
 import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
+import '../investor/interested_investors_screen.dart';
 import '../profile/profile_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../maps/office_location_screen.dart';
@@ -448,6 +449,17 @@ class _MyProjectsTab extends StatelessWidget {
                         icon: Icons.people,
                         label: 'Interesados',
                         value: project.interestedInvestors.toString(),
+                        onTap: project.interestedInvestors > 0 ? () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => InterestedInvestorsScreen(
+                                projectId: project.id,
+                                projectTitle: project.title,
+                              ),
+                            ),
+                          );
+                        } : null,
                       ),
                       _ProjectStat(
                         icon: Icons.percent,
@@ -666,33 +678,51 @@ class _ProjectStat extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   const _ProjectStat({
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, size: 20, color: Colors.grey[600]),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: onTap != null ? Colors.blue.withOpacity(0.1) : null,
+          borderRadius: BorderRadius.circular(8),
         ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
+        child: Column(
+          children: [
+            Icon(
+              icon, 
+              size: 20, 
+              color: onTap != null ? Colors.blue : Colors.grey[600],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: onTap != null ? Colors.blue : null,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

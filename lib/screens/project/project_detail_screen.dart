@@ -1,10 +1,9 @@
 // Archivo: lib/screens/project/project_detail_screen.dart
-// Pantalla de detalles del proyecto con Quick Pitch
+// Pantalla de detalles del proyecto con Quick Pitch - ACTUALIZADA
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:audioplayers/audioplayers.dart';
 import '../../../models/project_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/project_provider.dart';
@@ -12,6 +11,8 @@ import '../../../widgets/custom_button.dart';
 import '../../../widgets/project_status_chip.dart';
 import '../../../widgets/user_rating_stars.dart';
 import '../../../services/audio_service.dart';
+import '../profile/public_profile_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final ProjectModel project;
@@ -27,9 +28,16 @@ class ProjectDetailScreen extends StatefulWidget {
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _isPlayingPitch = false;
-  bool _isInterested = false; // Simulado
+  bool _isInterested = false;
+  bool _isCheckingInterest = true;
   final PageController _imageController = PageController();
   int _currentImageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUserInterest();
+  }
 
   @override
   void dispose() {
@@ -40,53 +48,168 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     super.dispose();
   }
 
-  // Reproducir Quick Pitch
-  Future<void> _toggleQuickPitch() async {
-    if (!widget.project.hasQuickPitch) return;
+  // Verificar si el usuario ya expresó interés
+  Future<void> _checkUserInterest() async {
+    final authProvider = context.read<AuthProvider>();
+    if (authProvider.user == null) {
+      setState(() {
+        _isCheckingInterest = false;
+      });
+      return;
+    }
 
-    if (_isPlayingPitch) {
-      await AudioService.stopAudio();
+    try {
+      final projectProvider = context.read<ProjectProvider>();
+      final hasInterest = await projectProvider.checkUserInterest(
+        widget.project.id,
+        authProvider.user!.uid,
+      );
+
       setState(() {
-        _isPlayingPitch = false;
+        _isInterested = hasInterest;
+        _isCheckingInterest = false;
       });
-    } else {
-      await AudioService.playAudio(widget.project.quickPitchUrl!);
+    } catch (e) {
+      print('Error checking interest: $e');
       setState(() {
-        _isPlayingPitch = true;
-      });
-      
-      // Escuchar cuando termine
-      AudioService.stopAudio();
-      setState(() {
-        _isPlayingPitch = false;
+        _isCheckingInterest = false;
       });
     }
   }
 
-  // Expresar interés (para inversores)
-  Future<void> _expressInterest() async {
-    final authProvider = context.read<AuthProvider>();
-    final projectProvider = context.read<ProjectProvider>();
-    
-    if (authProvider.user == null) return;
-    
-    final success = await projectProvider.expressInterest(
-      widget.project.id,
-      authProvider.user!.uid,
-    );
-    
-    if (success) {
+  // Reproducir Quick Pitch
+  Future<void> _toggleQuickPitch() async {
+    if (!widget.project.hasQuickPitch) return;
+
+    try {
+      if (_isPlayingPitch) {
+        await AudioService.stopAudio();
+        setState(() {
+          _isPlayingPitch = false;
+        });
+      } else {
+        setState(() {
+          _isPlayingPitch = true;
+        });
+        
+        await AudioService.playAudio(widget.project.quickPitchUrl!);
+        
+        // Escuchar cuando termine (máximo 60 segundos)
+        Future.delayed(const Duration(seconds: 60), () {
+          if (mounted && _isPlayingPitch) {
+            setState(() {
+              _isPlayingPitch = false;
+            });
+          }
+        });
+      }
+    } catch (e) {
+      print('Error playing audio: $e');
       setState(() {
-        _isInterested = true;
+        _isPlayingPitch = false;
       });
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('¡Has expresado interés en este proyecto!'),
-          backgroundColor: Colors.green,
+          content: Text('Error al reproducir el audio'),
+          backgroundColor: Colors.red,
         ),
       );
     }
+  }
+
+  // Expresar interés (para inversores)
+Future<void> _expressInterest() async {
+  final authProvider = context.read<AuthProvider>();
+  final projectProvider = context.read<ProjectProvider>();
+  
+  if (authProvider.user == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Debes iniciar sesión para expresar interés'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    return;
+  }
+  
+  // Verificar que sea un inversor
+  if (authProvider.userModel?.userType != 'investor') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Solo los inversores pueden expresar interés en proyectos'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    return;
+  }
+  
+  setState(() {
+    _isInterested = true; // Optimistic update
+  });
+  
+  final success = await projectProvider.expressInterest(
+    widget.project.id,
+    authProvider.user!.uid,
+  );
+  
+  if (!mounted) return;
+  
+  if (success) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('¡Has expresado interés en este proyecto!'),
+        backgroundColor: Colors.green,
+      ),
+    );
+    
+    // Opcionalmente, crear una notificación para el emprendedor
+    try {
+     await FirebaseFirestore.instance
+    .collection('notifications')
+    .add({
+      'userId': widget.project.entrepreneurId,
+      'title': 'Nuevo inversor interesado',
+      'body': '${authProvider.userModel?.name ?? 'Un inversor'} está interesado en tu proyecto ${widget.project.title}',
+      'type': 'investor_interest',
+      'data': {
+        'projectId': widget.project.id,
+        'projectTitle': widget.project.title,
+        'investorId': authProvider.user!.uid,
+        'investorName': authProvider.userModel?.name ?? 'Inversor',
+      },
+      'createdAt': FieldValue.serverTimestamp(),
+      'read': false,
+    });
+    } catch (e) {
+      print('Error creating notification: $e');
+      // No fallar la operación por esto
+    }
+  } else {
+    setState(() {
+      _isInterested = false; // Revert on error
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(projectProvider.error ?? 'Error al expresar interés'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+  // Navegar al perfil del emprendedor
+  void _navigateToProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PublicProfileScreen(
+          userId: widget.project.entrepreneurId,
+          userName: widget.project.entrepreneurName,
+        ),
+      ),
+    );
   }
 
   @override
@@ -127,14 +250,27 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               child: CircularProgressIndicator(),
                             ),
                           ),
-                          errorWidget: (_, __, ___) => Container(
-                            color: Colors.grey[300],
-                            child: const Icon(
-                              Icons.business,
-                              size: 80,
-                              color: Colors.grey,
-                            ),
-                          ),
+                          errorWidget: (_, error, stackTrace) {
+                            print('Error loading image: $error');
+                            return Container(
+                              color: Colors.grey[300],
+                              child: const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 60,
+                                    color: Colors.grey,
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'Error al cargar imagen',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         );
                       },
                     )
@@ -282,16 +418,28 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   if (!isOwner) ...[
                     if (isInvestor)
                       CustomButton(
-                        text: _isInterested 
-                            ? 'Ya expresaste interés' 
-                            : 'Expresar interés',
-                        onPressed: _isInterested ? null : _expressInterest,
-                        icon: Icons.star,
+                        text: _isCheckingInterest
+                            ? 'Verificando...'
+                            : _isInterested 
+                                ? 'Ya expresaste interés' 
+                                : 'Expresar interés',
+                        onPressed: _isCheckingInterest || _isInterested 
+                            ? null 
+                            : _expressInterest,
+                        icon: _isInterested ? Icons.check : Icons.star,
+                        backgroundColor: _isInterested 
+                            ? Colors.grey 
+                            : Theme.of(context).primaryColor,
                       ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: () {
-                        // Compartir proyecto
+                        // TODO: Implementar compartir
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Función de compartir próximamente'),
+                          ),
+                        );
                       },
                       icon: const Icon(Icons.share),
                       label: const Text('Compartir proyecto'),
@@ -304,14 +452,24 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     CustomButton(
                       text: 'Editar proyecto',
                       onPressed: () {
-                        // Navegar a editar
+                        // TODO: Navegar a editar
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Función de edición próximamente'),
+                          ),
+                        );
                       },
                       icon: Icons.edit,
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: () {
-                        // Ver estadísticas
+                        // TODO: Ver estadísticas
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Estadísticas próximamente'),
+                          ),
+                        );
                       },
                       icon: const Icon(Icons.analytics),
                       label: const Text('Ver estadísticas'),
@@ -567,9 +725,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 ),
                 
                 OutlinedButton(
-                  onPressed: () {
-                    // Ver perfil
-                  },
+                  onPressed: _navigateToProfile,
                   child: const Text('Ver perfil'),
                 ),
               ],

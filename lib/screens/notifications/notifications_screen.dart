@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/notification_service.dart';
 import '../../../widgets/custom_card.dart';
+import '../investor/interested_investors_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -158,6 +159,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         break;
       case 'investor_interest':
         // Navegar a inversores interesados
+        break;
+        // En el método _handleNotificationTap, actualiza el case 'investor_interest':
+
+      case 'investor_interest':
+        final projectId = data['data']?['projectId'];
+        if (projectId != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => InterestedInvestorsScreen(
+                projectId: projectId,
+                projectTitle: data['data']?['projectTitle'] ?? 'Proyecto',
+              ),
+            ),
+          );
+        }
         break;
       default:
         // No hacer nada

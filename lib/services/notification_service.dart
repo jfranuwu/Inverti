@@ -1,5 +1,5 @@
 // Archivo: lib/services/notification_service.dart
-// Servicio para manejo de notificaciones con FCM
+// Servicio para manejo de notificaciones con FCM - ACTUALIZADO
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -56,7 +56,6 @@ class NotificationService {
   static Future<void> _saveToken(String token) async {
     try {
       // Guardar token asociado al usuario si está autenticado
-      // Esto se haría en conjunto con el AuthProvider
       print('Token FCM: $token');
     } catch (e) {
       print('Error al guardar token: $e');
@@ -148,9 +147,6 @@ class NotificationService {
     required String body,
     Map<String, dynamic>? payload,
   }) {
-    // Aquí se implementaría la lógica para mostrar
-    // una notificación local usando flutter_local_notifications
-    // Por simplicidad, solo imprimimos
     print('Notificación local: $title - $body');
   }
   
@@ -186,7 +182,7 @@ class NotificationService {
     }
   }
   
-  // Obtener notificaciones del usuario
+  // Obtener notificaciones del usuario - ACTUALIZADO CON ÍNDICE COMPUESTO
   static Stream<QuerySnapshot> getUserNotifications(String userId) {
     return _firestore
         .collection(FirebaseConfig.notificationsCollection)
@@ -206,19 +202,39 @@ class NotificationService {
         .map((snapshot) => snapshot.docs.length);
   }
   
+  // Crear notificación manual
+  static Future<void> createNotification({
+    required String userId,
+    required String title,
+    required String body,
+    required String type,
+    Map<String, dynamic>? data,
+  }) async {
+    try {
+      await _firestore.collection(FirebaseConfig.notificationsCollection).add({
+        'userId': userId,
+        'title': title,
+        'body': body,
+        'type': type,
+        'data': data ?? {},
+        'createdAt': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+    } catch (e) {
+      print('Error al crear notificación: $e');
+    }
+  }
+  
   // Métodos de navegación (se implementarían con Navigator)
   static void _navigateToProject(String projectId) {
-    // Implementar navegación a proyecto
     print('Navegar a proyecto: $projectId');
   }
   
   static void _navigateToInterests() {
-    // Implementar navegación a intereses
     print('Navegar a intereses');
   }
   
   static void _navigateToNotifications() {
-    // Implementar navegación a notificaciones
     print('Navegar a notificaciones');
   }
 }

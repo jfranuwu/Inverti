@@ -179,38 +179,76 @@ class ProjectProvider extends ChangeNotifier {
   }
   
   // Expresar interés en un proyecto (para inversores)
-  Future<bool> expressInterest(String projectId, String investorId) async {
-    try {
-      // Crear documento de interés
-      await _firestore.collection(FirebaseConfig.interestsCollection).add({
-        'projectId': projectId,
-        'investorId': investorId,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      
-      // Incrementar contador en el proyecto
-      await _firestore
-          .collection(FirebaseConfig.projectsCollection)
-          .doc(projectId)
-          .update({
-        'interestedInvestors': FieldValue.increment(1),
-      });
-      
-      // Actualizar proyecto local
-      final index = _projects.indexWhere((p) => p.id == projectId);
-      if (index != -1) {
-        _projects[index] = _projects[index].copyWith(
-          interestedInvestors: _projects[index].interestedInvestors + 1,
-        );
-        notifyListeners();
-      }
-      
-      return true;
-    } catch (e) {
-      _error = 'Error al expresar interés: $e';
+Future<bool> expressInterest(String projectId, String investorId) async {
+  try {
+    print('Expressing interest - Project: $projectId, Investor: $investorId');
+    
+    // Verificar primero si ya existe el interés
+    final existingInterest = await _firestore
+        .collection(FirebaseConfig.interestsCollection)
+        .where('projectId', isEqualTo: projectId)
+        .where('investorId', isEqualTo: investorId)
+        .limit(1)
+        .get();
+    
+    if (existingInterest.docs.isNotEmpty) {
+      print('Interest already exists');
+      _error = 'Ya has expresado interés en este proyecto';
       return false;
     }
+    
+    // Crear documento de interés con todos los campos necesarios
+    final interestData = {
+      'projectId': projectId,
+      'investorId': investorId,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    
+    print('Creating interest document with data: $interestData');
+    
+    await _firestore
+        .collection(FirebaseConfig.interestsCollection)
+        .add(interestData);
+    
+    print('Interest document created successfully');
+    
+    // Incrementar contador en el proyecto usando una transacción
+    final projectRef = _firestore
+        .collection(FirebaseConfig.projectsCollection)
+        .doc(projectId);
+    
+    await _firestore.runTransaction((transaction) async {
+      final projectDoc = await transaction.get(projectRef);
+      
+      if (!projectDoc.exists) {
+        throw Exception('El proyecto no existe');
+      }
+      
+      final currentCount = projectDoc.data()?['interestedInvestors'] ?? 0;
+      
+      transaction.update(projectRef, {
+        'interestedInvestors': currentCount + 1,
+      });
+    });
+    
+    print('Project counter updated successfully');
+    
+    // Actualizar proyecto local si existe
+    final index = _projects.indexWhere((p) => p.id == projectId);
+    if (index != -1) {
+      _projects[index] = _projects[index].copyWith(
+        interestedInvestors: _projects[index].interestedInvestors + 1,
+      );
+      notifyListeners();
+    }
+    
+    return true;
+  } catch (e) {
+    print('Error expressing interest: $e');
+    _error = 'Error al expresar interés: $e';
+    return false;
   }
+}
   
   // Cambiar filtro de industria
   void setIndustryFilter(String industry) {
@@ -227,6 +265,22 @@ class ProjectProvider extends ChangeNotifier {
           project.industry.toLowerCase().contains(lowercaseQuery);
     }).toList();
   }
+  // Verificar si el usuario ya expresó interés
+Future<bool> checkUserInterest(String projectId, String userId) async {
+  try {
+    final querySnapshot = await _firestore
+        .collection(FirebaseConfig.interestsCollection)
+        .where('projectId', isEqualTo: projectId)
+        .where('investorId', isEqualTo: userId)
+        .limit(1)
+        .get();
+    
+    return querySnapshot.docs.isNotEmpty;
+  } catch (e) {
+    print('Error checking user interest: $e');
+    return false;
+  }
+}
   
   // Limpiar error
   void clearError() {
