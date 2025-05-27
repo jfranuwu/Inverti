@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "333011509093",
+    "project_id": "inverti-app",
+    "storage_bucket": "inverti-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:333011509093:android:b8ea63560a0494840c4b8c",
+        "android_client_info": {
+          "package_name": "com.example.inverti_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "333011509093-dn3ndbr301pqe3rukrc3raciobgl2gtn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.inverti_app",
+            "certificate_hash": "482987bc2f684d542857478c17757b92d8dc8e5f"
+          }
+        },
+        {
+          "client_id": "333011509093-85oksqlldk5hqhh4jbg2gegg45r0l5f5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6VXLpuBIyszwnIuQZV2zbTpga8QC3C1k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "333011509093-85oksqlldk5hqhh4jbg2gegg45r0l5f5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
