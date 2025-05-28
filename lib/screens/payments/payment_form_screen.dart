@@ -1,9 +1,9 @@
 // Archivo: lib/screens/payments/payment_form_screen.dart
-// Pantalla de formulario de pago (simulación)
+// Pantalla de formulario de pago (simulación) - CORREGIDA
 
 import 'package:flutter/material.dart';
 import 'package:flutter_credit_card/flutter_credit_card.dart';
-import '../../../widgets/custom_button.dart';
+import '../../widgets/custom_button.dart';
 import 'subscription_plans_screen.dart';
 
 class PaymentFormScreen extends StatefulWidget {
@@ -265,7 +265,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
             ),
           ),
           
-          // Botón de pago
+          // Botón de pago - CORREGIDO
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -283,7 +283,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
                 text: 'Pagar \$${widget.plan.price.toStringAsFixed(2)}',
                 onPressed: _isProcessing ? null : _processPayment,
                 isLoading: _isProcessing,
-                backgroundColor: widget.plan.color,
+                color: widget.plan.color, // ✅ Cambiado de backgroundColor a color
                 icon: Icons.lock,
               ),
             ),

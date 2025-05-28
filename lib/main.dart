@@ -1,8 +1,9 @@
 // Archivo: lib/main.dart
-// Punto de entrada principal de la aplicación Inverti
+// Punto de entrada principal de la aplicación Inverti con FCM integrado
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,38 +18,92 @@ import 'providers/project_provider.dart';
 
 // Importaciones de servicios
 import 'services/notification_service.dart';
+import 'services/fcm_service.dart';
 
 // Importaciones de pantallas
 import 'screens/splash_screen.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
+// Handler para mensajes en segundo plano
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Verificar si Firebase ya está inicializado de manera más robusta
   if (Firebase.apps.isEmpty) {
     await Firebase.initializeApp(
       options: FirebaseConfig.currentPlatform,
     );
   }
+  debugPrint('🔔 Mensaje FCM recibido en segundo plano: ${message.messageId}');
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   
-  // Resto del código...
-  await NotificationService.initialize();
+  try {
+    // Verificar si Firebase ya está inicializado de manera más robusta
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: FirebaseConfig.currentPlatform,
+      );
+    }
+    
+    // Configurar handler de mensajes en segundo plano para FCM
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    
+    // Inicializar servicios (con manejo de errores)
+    await _initializeServices();
+    
+    // Configurar SharedPreferences para el tema
+    final prefs = await SharedPreferences.getInstance();
+    final isDarkMode = prefs.getBool('isDarkMode') ?? false;
+    
+    runApp(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(
+            create: (_) => ThemeProvider(isDarkMode),
+          ),
+          ChangeNotifierProvider(create: (_) => ProjectProvider()),
+        ],
+        child: const InvertiApp(),
+      ),
+    );
+  } catch (e) {
+    debugPrint('❌ Error crítico en main: $e');
+    
+    // En caso de error crítico, ejecutar app con funcionalidad mínima
+    runApp(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => ThemeProvider(false)),
+          ChangeNotifierProvider(create: (_) => ProjectProvider()),
+        ],
+        child: const InvertiApp(),
+      ),
+    );
+  }
+}
+
+// Función auxiliar para inicializar servicios con manejo de errores
+Future<void> _initializeServices() async {
+  try {
+    // Inicializar servicios de notificación (método de instancia)
+    await NotificationService().initialize();
+    debugPrint('✅ NotificationService inicializado');
+  } catch (e) {
+    debugPrint('⚠️ Error inicializando NotificationService: $e');
+    // NotificationService no es crítico, la app puede funcionar sin él
+  }
   
-  final prefs = await SharedPreferences.getInstance();
-  final isDarkMode = prefs.getBool('isDarkMode') ?? false;
-  
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(
-          create: (_) => ThemeProvider(isDarkMode),
-        ),
-        ChangeNotifierProvider(create: (_) => ProjectProvider()),
-      ],
-      child: const InvertiApp(),
-    ),
-  );
+  try {
+    // Inicializar FCM
+    await FCMService().initialize();
+    debugPrint('✅ FCMService inicializado');
+  } catch (e) {
+    debugPrint('⚠️ Error inicializando FCMService: $e');
+    // FCM no es crítico, la app puede funcionar sin él
+  }
 }
 
 class InvertiApp extends StatelessWidget {
@@ -71,10 +126,36 @@ class InvertiApp extends StatelessWidget {
           // Modo de tema basado en el provider
           themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           
-          // Pantalla inicial - Splash Screen
+          // Pantalla inicial - Splash Screen (como en tu versión original)
           home: const SplashScreen(),
         );
       },
     );
+  }
+}
+
+// Clase auxiliar para manejo de errores de Firebase (opcional)
+class FirebaseErrorHandler {
+  static void handleFirebaseError(dynamic error) {
+    debugPrint('🔥 Firebase Error: $error');
+    
+    // Aquí puedes agregar lógica adicional como:
+    // - Enviar errores a analytics
+    // - Mostrar mensajes específicos al usuario
+    // - Reintentar operaciones
+  }
+  
+  static Future<bool> isFirebaseAvailable() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: FirebaseConfig.currentPlatform,
+        );
+      }
+      return true;
+    } catch (e) {
+      debugPrint('❌ Firebase no disponible: $e');
+      return false;
+    }
   }
 }

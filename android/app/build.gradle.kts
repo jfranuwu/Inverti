@@ -28,6 +28,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -76,6 +77,7 @@ dependencies {
     // Agregar estas dependencias para resolver problemas de compatibilidad
     implementation("com.google.android.gms:play-services-base:18.5.0")
     implementation("androidx.core:core-ktx:1.13.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
 
 // Configuración adicional para resolver conflictos

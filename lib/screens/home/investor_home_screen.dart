@@ -1,15 +1,15 @@
 // Archivo: lib/screens/home/investor_home_screen.dart
-// Pantalla principal para inversores
+// Pantalla principal para inversores - CORREGIDA
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../providers/auth_provider.dart';
-import '../../../providers/project_provider.dart';
-import '../../../models/project_model.dart';
-import '../../../widgets/custom_card.dart';
-import '../../../widgets/investment_progress_card.dart';
-import '../../../widgets/notification_badge.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/project_provider.dart';
+import '../../models/project_model.dart';
+import '../../widgets/custom_card.dart';
+import '../../widgets/investment_progress_card.dart';
+import '../../widgets/notification_badge.dart';
 import '../project/project_detail_screen.dart';
 import '../profile/profile_screen.dart';
 import '../notifications/notifications_screen.dart';
@@ -25,9 +25,25 @@ class InvestorHomeScreen extends StatefulWidget {
 
 class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
   int _selectedIndex = 0;
+  String _selectedCategory = 'Todas';
   
   // Páginas del bottom navigation
   late final List<Widget> _pages;
+
+  // Categorías disponibles
+  final List<String> _categories = [
+    'Todas',
+    'Tecnología',
+    'Salud',
+    'Educación',
+    'Finanzas',
+    'E-commerce',
+    'Sostenibilidad',
+    'Entretenimiento',
+    'Alimentación',
+    'Transporte',
+    'Inmobiliario',
+  ];
 
   @override
   void initState() {
@@ -35,13 +51,21 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
     _pages = [
       const _HomeTab(),
       const _PortfolioTab(),
-      const _ExploreTab(),
+      _ExploreTab(
+        categories: _categories,
+        selectedCategory: _selectedCategory,
+        onCategoryChanged: (category) {
+          setState(() {
+            _selectedCategory = category;
+          });
+        },
+      ),
       const ProfileScreen(),
     ];
     
     // Cargar proyectos
     Future.microtask(() {
-      context.read<ProjectProvider>().loadProjects();
+      context.read<ProjectProvider>().loadAllProjects();
     });
   }
 
@@ -74,7 +98,20 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
       ),
       body: IndexedStack(
         index: _selectedIndex,
-        children: _pages,
+        children: [
+          _pages[0], // HomeTab
+          _pages[1], // PortfolioTab
+          _ExploreTab(
+            categories: _categories,
+            selectedCategory: _selectedCategory,
+            onCategoryChanged: (category) {
+              setState(() {
+                _selectedCategory = category;
+              });
+            },
+          ), // ExploreTab actualizado
+          _pages[3], // ProfileTab
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -130,7 +167,7 @@ class _HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final projectProvider = context.watch<ProjectProvider>();
-    final projects = projectProvider.projects.take(5).toList();
+    final projects = projectProvider.allProjects.take(5).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -330,13 +367,26 @@ class _PortfolioTab extends StatelessWidget {
   }
 }
 
-// Tab de explorar
+// Tab de explorar - CORREGIDO
 class _ExploreTab extends StatelessWidget {
-  const _ExploreTab();
+  final List<String> categories;
+  final String selectedCategory;
+  final Function(String) onCategoryChanged;
+
+  const _ExploreTab({
+    required this.categories,
+    required this.selectedCategory,
+    required this.onCategoryChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     final projectProvider = context.watch<ProjectProvider>();
+    
+    // Filtrar proyectos por categoría
+    final filteredProjects = selectedCategory == 'Todas'
+        ? projectProvider.allProjects
+        : projectProvider.getProjectsByCategory(selectedCategory);
 
     return Column(
       children: [
@@ -344,28 +394,24 @@ class _ExploreTab extends StatelessWidget {
         Container(
           height: 50,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: ListView(
+          child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            children: [
-              FilterChip(
-                label: const Text('Todas'),
-                selected: projectProvider.selectedIndustry == 'Todas',
-                onSelected: (_) {
-                  projectProvider.setIndustryFilter('Todas');
-                },
-              ),
-              const SizedBox(width: 8),
-              ...Industries.list.map((industry) => Padding(
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              final category = categories[index];
+              final isSelected = selectedCategory == category;
+              
+              return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: FilterChip(
-                  label: Text(industry),
-                  selected: projectProvider.selectedIndustry == industry,
+                  label: Text(category),
+                  selected: isSelected,
                   onSelected: (_) {
-                    projectProvider.setIndustryFilter(industry);
+                    onCategoryChanged(category);
                   },
                 ),
-              )),
-            ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 16),
@@ -374,15 +420,15 @@ class _ExploreTab extends StatelessWidget {
         Expanded(
           child: projectProvider.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : projectProvider.filteredProjects.isEmpty
+              : filteredProjects.isEmpty
                   ? const Center(
                       child: Text('No hay proyectos en esta categoría'),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: projectProvider.filteredProjects.length,
+                      itemCount: filteredProjects.length,
                       itemBuilder: (context, index) {
-                        final project = projectProvider.filteredProjects[index];
+                        final project = filteredProjects[index];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: _ProjectCard(project: project),
@@ -501,20 +547,31 @@ class _ProjectCard extends StatelessWidget {
                 // Imagen del proyecto
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: project.images?.first ?? '',
-                    width: 60,
-                    height: 60,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.business, color: Colors.grey),
-                    ),
-                    errorWidget: (_, __, ___) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.business, color: Colors.grey),
-                    ),
-                  ),
+                  child: project.images.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: project.images.first,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            width: 60,
+                            height: 60,
+                            color: Colors.grey[300],
+                            child: const Icon(Icons.business, color: Colors.grey),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            width: 60,
+                            height: 60,
+                            color: Colors.grey[300],
+                            child: const Icon(Icons.business, color: Colors.grey),
+                          ),
+                        )
+                      : Container(
+                          width: 60,
+                          height: 60,
+                          color: Colors.grey[300],
+                          child: const Icon(Icons.business, color: Colors.grey),
+                        ),
                 ),
                 const SizedBox(width: 16),
                 
@@ -531,7 +588,7 @@ class _ProjectCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        project.industry,
+                        project.category,
                         style: TextStyle(
                           color: Theme.of(context).primaryColor,
                         ),
@@ -541,7 +598,8 @@ class _ProjectCard extends StatelessWidget {
                 ),
                 
                 // Quick Pitch indicator
-                if (project.hasQuickPitch)
+                if (project.metadata['quickPitchUrl'] != null && 
+                    project.metadata['quickPitchUrl'].toString().isNotEmpty)
                   Icon(
                     Icons.mic,
                     color: Theme.of(context).primaryColor,

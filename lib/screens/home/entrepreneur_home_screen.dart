@@ -1,17 +1,19 @@
 // Archivo: lib/screens/home/entrepreneur_home_screen.dart
-// Pantalla principal para emprendedores
+// Pantalla principal para emprendedores - CORREGIDA
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/auth_provider.dart';
-import '../../../providers/project_provider.dart';
-import '../../../widgets/custom_card.dart';
-import '../../../widgets/project_status_chip.dart';
-import '../../../widgets/quick_action_fab.dart';
-import '../../../widgets/notification_badge.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/project_provider.dart';
+import '../../widgets/custom_card.dart';
+import '../../widgets/project_status_chip.dart';
+import '../../widgets/quick_action_fab.dart';
+import '../../widgets/notification_badge.dart';
 import '../project/create_project_screen.dart';
 import '../project/project_detail_screen.dart';
-import '../investor/interested_investors_screen.dart';
+import '../project/interested_investors_screen.dart';
+import '../project/edit_project_screen.dart';
+import '../../widgets/delete_confirmation_dialog.dart';
 import '../profile/profile_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../maps/office_location_screen.dart';
@@ -170,7 +172,7 @@ class _HomeTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Resumen de proyectos
-          _buildProjectsSummary(context, myProjects.length),
+          _buildProjectsSummary(context, myProjects),
           const SizedBox(height: 24),
           
           // Proyectos recientes
@@ -302,16 +304,72 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildProjectsSummary(BuildContext context, int projectCount) {
+  Widget _buildProjectsSummary(BuildContext context, List<dynamic> myProjects) {
+    // Calcular estadísticas en tiempo real con conversiones seguras
+    final totalProjects = myProjects.length;
+    
+    int totalInterested = 0;
+    double totalFunding = 0.0;
+    int totalViews = 0;
+    int activeProjects = 0;
+    
+    // Iterar sobre proyectos y sumar valores de forma segura
+    for (final project in myProjects) {
+      // Sumar inversores interesados (con casting seguro)
+      totalInterested += (project.interestedInvestors as int? ?? 0);
+      
+      // Sumar financiamiento (con casting seguro)
+      totalFunding += (project.currentFunding as double? ?? 0.0);
+      
+      // Sumar vistas (con casting seguro)
+      totalViews += (project.views as int? ?? 0);
+      
+      // Contar proyectos activos
+      if (project.status == 'active') {
+        activeProjects++;
+      }
+    }
+    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Resumen de actividad',
-              style: Theme.of(context).textTheme.titleLarge,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Resumen de actividad',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.radio_button_checked,
+                        size: 8,
+                        color: Colors.green,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'En tiempo real',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.green,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             
@@ -321,26 +379,82 @@ class _HomeTab extends StatelessWidget {
                 _SummaryItem(
                   icon: Icons.rocket_launch,
                   label: 'Proyectos',
-                  value: projectCount.toString(),
+                  value: totalProjects.toString(),
                   color: Theme.of(context).primaryColor,
                 ),
                 _SummaryItem(
                   icon: Icons.people,
                   label: 'Inversores interesados',
-                  value: '12', // Simulado
+                  value: totalInterested.toString(),
                   color: Colors.orange,
                 ),
                 _SummaryItem(
-                  icon: Icons.visibility,
-                  label: 'Vistas totales',
-                  value: '234', // Simulado
-                  color: Colors.blue,
+                  icon: Icons.attach_money,
+                  label: 'Financiamiento',
+                  value: '\$${totalFunding.toStringAsFixed(0)}',
+                  color: Colors.green,
                 ),
               ],
             ),
+            
+            // Estadísticas adicionales
+            if (totalProjects > 0) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildMiniStat(
+                      'Activos',
+                      activeProjects.toString(),
+                      Colors.blue,
+                    ),
+                    _buildMiniStat(
+                      'Vistas',
+                      totalViews.toString(),
+                      Colors.purple,
+                    ),
+                    _buildMiniStat(
+                      'Promedio',
+                      totalProjects > 0 
+                          ? '${(totalInterested.toDouble() / totalProjects.toDouble()).toStringAsFixed(1)} int/proyecto'
+                          : '0 int/proyecto',
+                      Colors.indigo,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMiniStat(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,15 +1,15 @@
 // Archivo: lib/screens/project/create_project_screen.dart
-// Pantalla para crear nuevo proyecto (solo emprendedores)
+// Pantalla para crear nuevo proyecto (solo emprendedores) - CORREGIDA
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../models/project_model.dart';
-import '../../../providers/auth_provider.dart';
-import '../../../providers/project_provider.dart';
-import '../../../widgets/custom_button.dart';
-import '../../../widgets/audio_recorder_widget.dart';
-import '../../../services/storage_service.dart';
-import '../../../services/audio_service.dart';
+import '../../models/project_model.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/project_provider.dart';
+import '../../widgets/custom_button.dart';
+import '../../widgets/audio_recorder_widget.dart';
+import '../../services/storage_service.dart';
+import '../../services/audio_service.dart';
 
 class CreateProjectScreen extends StatefulWidget {
   const CreateProjectScreen({super.key});
@@ -22,37 +22,78 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _fullDescriptionController = TextEditingController();
   final _fundingGoalController = TextEditingController();
-  final _roiController = TextEditingController();
+  final _equityController = TextEditingController();
   final _locationController = TextEditingController();
+  final _contactEmailController = TextEditingController();
+  final _contactPhoneController = TextEditingController();
+  final _websiteController = TextEditingController();
+  final _linkedinController = TextEditingController();
   
-  String _selectedIndustry = Industries.list.first;
+  // Categorías disponibles
+  final List<String> _categories = [
+    'Tecnología',
+    'Salud',
+    'Educación',
+    'Finanzas',
+    'E-commerce',
+    'Sostenibilidad',
+    'Entretenimiento',
+    'Alimentación',
+    'Transporte',
+    'Inmobiliario',
+  ];
+  
+  String _selectedCategory = 'Tecnología';
   List<String> _projectImages = [];
   String? _quickPitchPath;
   bool _isLoading = false;
   bool _isRecording = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Prellenar email del usuario actual
+    final authProvider = context.read<AuthProvider>();
+    _contactEmailController.text = authProvider.userModel?.email ?? '';
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _fullDescriptionController.dispose();
     _fundingGoalController.dispose();
-    _roiController.dispose();
+    _equityController.dispose();
     _locationController.dispose();
+    _contactEmailController.dispose();
+    _contactPhoneController.dispose();
+    _websiteController.dispose();
+    _linkedinController.dispose();
     super.dispose();
   }
 
   // Agregar imágenes del proyecto
   Future<void> _addProjectImages() async {
-    final images = await StorageService.uploadProjectImages(
-      'temp_${DateTime.now().millisecondsSinceEpoch}',
-      3, // Máximo 3 imágenes
-    );
-    
-    if (images.isNotEmpty) {
-      setState(() {
-        _projectImages.addAll(images);
-      });
+    try {
+      final images = await StorageService.uploadProjectImages(
+        'temp_${DateTime.now().millisecondsSinceEpoch}',
+        3, // Máximo 3 imágenes
+      );
+      
+      if (images.isNotEmpty) {
+        setState(() {
+          _projectImages.addAll(images);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al subir imágenes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -77,27 +118,54 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         );
       }
       
-      // Crear proyecto
-      final success = await projectProvider.createProject(
+      // Preparar metadata que incluye información del emprendedor
+      Map<String, dynamic> metadata = {};
+      if (quickPitchUrl != null) {
+        metadata['quickPitchUrl'] = quickPitchUrl;
+      }
+      // Agregar nombre del emprendedor al metadata si está disponible
+      if (authProvider.userModel?.name != null) {
+        metadata['entrepreneurName'] = authProvider.userModel!.name;
+      }
+      
+      // Crear el ProjectModel
+      final project = ProjectModel(
+        id: '', // Se asignará automáticamente
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
-        entrepreneurId: authProvider.user!.uid,
-        entrepreneurName: authProvider.userModel!.name,
+        fullDescription: _fullDescriptionController.text.trim().isEmpty 
+            ? _descriptionController.text.trim() 
+            : _fullDescriptionController.text.trim(),
+        category: _selectedCategory,
+        imageUrl: _projectImages.isNotEmpty ? _projectImages.first : '',
+        images: _projectImages,
         fundingGoal: double.parse(_fundingGoalController.text),
-        industry: _selectedIndustry,
-        quickPitchUrl: quickPitchUrl,
-        images: _projectImages.isEmpty ? null : _projectImages,
-        location: _locationController.text.trim().isEmpty 
-            ? null 
-            : _locationController.text.trim(),
-        roi: _roiController.text.isEmpty 
-            ? null 
-            : double.parse(_roiController.text),
+        currentFunding: 0.0,
+        fundingPercentage: 0.0,
+        equityOffered: _equityController.text.isEmpty 
+            ? 0.0 
+            : double.parse(_equityController.text),
+        status: 'active',
+        createdBy: authProvider.user!.uid,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        contactEmail: _contactEmailController.text.trim(),
+        contactPhone: _contactPhoneController.text.trim(),
+        website: _websiteController.text.trim(),
+        linkedin: _linkedinController.text.trim(),
+        isFeatured: false,
+        isActive: true,
+        interestedInvestors: 0,
+        views: 0,
+        metadata: metadata,
       );
+      
+      // Crear proyecto usando el ProjectProvider actualizado
+      final projectId = await projectProvider.createProject(project);
       
       if (!mounted) return;
       
-      if (success) {
+      if (projectId != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('¡Proyecto creado exitosamente!'),
@@ -114,16 +182,20 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -146,6 +218,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 labelText: 'Título del proyecto *',
                 hintText: 'Ej: App de delivery sostenible',
                 prefixIcon: Icon(Icons.title),
+                border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
@@ -159,104 +232,185 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
             ),
             const SizedBox(height: 16),
             
-            // Industria
+            // Categoría
             DropdownButtonFormField<String>(
-              value: _selectedIndustry,
+              value: _selectedCategory,
               decoration: const InputDecoration(
-                labelText: 'Industria *',
+                labelText: 'Categoría *',
                 prefixIcon: Icon(Icons.category),
+                border: OutlineInputBorder(),
               ),
-              items: Industries.list.map((industry) {
+              items: _categories.map((category) {
                 return DropdownMenuItem(
-                  value: industry,
-                  child: Text(industry),
+                  value: category,
+                  child: Text(category),
                 );
               }).toList(),
               onChanged: (value) {
                 setState(() {
-                  _selectedIndustry = value!;
+                  _selectedCategory = value!;
                 });
               },
             ),
             const SizedBox(height: 16),
             
-            // Descripción
+            // Descripción corta
             TextFormField(
               controller: _descriptionController,
-              maxLines: 5,
+              maxLines: 3,
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
-                labelText: 'Descripción del proyecto *',
-                hintText: 'Describe tu proyecto, problema que resuelve, '
-                    'modelo de negocio, etc.',
+                labelText: 'Descripción corta *',
+                hintText: 'Resumen ejecutivo de tu proyecto',
                 alignLabelWithHint: true,
+                border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'Por favor ingresa una descripción';
                 }
-                if (value.trim().length < 50) {
-                  return 'La descripción debe tener al menos 50 caracteres';
+                if (value.trim().length < 20) {
+                  return 'La descripción debe tener al menos 20 caracteres';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
             
-            // Meta de financiamiento
+            // Descripción completa
             TextFormField(
-              controller: _fundingGoalController,
-              keyboardType: TextInputType.number,
+              controller: _fullDescriptionController,
+              maxLines: 6,
+              textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
-                labelText: 'Meta de financiamiento (USD) *',
-                hintText: 'Ej: 50000',
-                prefixIcon: Icon(Icons.attach_money),
+                labelText: 'Descripción completa (opcional)',
+                hintText: 'Describe detalladamente tu proyecto, problema que resuelve, modelo de negocio, etc.',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Meta de financiamiento y equity
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _fundingGoalController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Meta (USD) *',
+                      hintText: '50000',
+                      prefixIcon: Icon(Icons.attach_money),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Requerido';
+                      }
+                      final amount = double.tryParse(value);
+                      if (amount == null || amount <= 0) {
+                        return 'Monto inválido';
+                      }
+                      if (amount < 1000) {
+                        return 'Mínimo \$1,000';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: TextFormField(
+                    controller: _equityController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Equity (%)',
+                      hintText: '10',
+                      prefixIcon: Icon(Icons.percent),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value != null && value.isNotEmpty) {
+                        final equity = double.tryParse(value);
+                        if (equity == null || equity < 0 || equity > 100) {
+                          return 'Entre 0-100%';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            // Información de contacto
+            Text(
+              'Información de contacto',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            TextFormField(
+              controller: _contactEmailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email de contacto *',
+                prefixIcon: Icon(Icons.email),
+                border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return 'Por favor ingresa la meta de financiamiento';
+                  return 'Email requerido';
                 }
-                final amount = double.tryParse(value);
-                if (amount == null || amount <= 0) {
-                  return 'Ingresa un monto válido';
-                }
-                if (amount < 1000) {
-                  return 'El monto mínimo es \$1,000 USD';
+                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                  return 'Email inválido';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
             
-            // ROI esperado
             TextFormField(
-              controller: _roiController,
-              keyboardType: TextInputType.number,
+              controller: _contactPhoneController,
+              keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
-                labelText: 'ROI esperado (%) - Opcional',
-                hintText: 'Ej: 15.5',
-                prefixIcon: Icon(Icons.trending_up),
+                labelText: 'Teléfono de contacto *',
+                prefixIcon: Icon(Icons.phone),
+                border: OutlineInputBorder(),
               ),
               validator: (value) {
-                if (value != null && value.isNotEmpty) {
-                  final roi = double.tryParse(value);
-                  if (roi == null || roi < 0) {
-                    return 'Ingresa un porcentaje válido';
-                  }
+                if (value == null || value.isEmpty) {
+                  return 'Teléfono requerido';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
             
-            // Ubicación
             TextFormField(
-              controller: _locationController,
-              textCapitalization: TextCapitalization.words,
+              controller: _websiteController,
+              keyboardType: TextInputType.url,
               decoration: const InputDecoration(
-                labelText: 'Ubicación - Opcional',
-                hintText: 'Ej: Ciudad de México',
-                prefixIcon: Icon(Icons.location_on),
+                labelText: 'Sitio web (opcional)',
+                hintText: 'https://miempresa.com',
+                prefixIcon: Icon(Icons.language),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            TextFormField(
+              controller: _linkedinController,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: 'LinkedIn (opcional)',
+                hintText: 'https://linkedin.com/in/miperfil',
+                prefixIcon: Icon(Icons.business),
+                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 24),
@@ -333,6 +487,14 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                                       width: 100,
                                       height: 100,
                                       fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Container(
+                                          width: 100,
+                                          height: 100,
+                                          color: Colors.grey[300],
+                                          child: const Icon(Icons.error),
+                                        );
+                                      },
                                     ),
                                   ),
                                   Positioned(

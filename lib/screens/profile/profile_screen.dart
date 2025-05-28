@@ -451,7 +451,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CustomButton(
                     text: 'Cerrar sesión',
                     onPressed: _signOut,
-                    backgroundColor: Colors.red,
+                    color: Colors.red,
                     icon: Icons.logout,
                   ),
                   const SizedBox(height: 32),
