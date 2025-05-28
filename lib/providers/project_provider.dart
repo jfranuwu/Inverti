@@ -54,74 +54,71 @@ class ProjectProvider with ChangeNotifier {
 
   // Cargar todos los proyectos con tiempo real
   Future<void> loadAllProjects() async {
-    try {
-      _setLoading(true);
-      _error = null;
+  try {
+    _setLoading(true);
+    _error = null;
 
-      // Cancelar suscripción anterior si existe
-      await _allProjectsSubscription?.cancel();
+    await _allProjectsSubscription?.cancel();
 
-      // Crear stream para todos los proyectos
-      _allProjectsSubscription = _firestore
-          .collection('projects')
-          .where('isActive', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .listen(
-        (snapshot) {
-          _allProjects = snapshot.docs
-              .map((doc) => ProjectModel.fromFirestore(doc))
-              .toList();
-          
-          _updateFeaturedProjects();
-          _setLoading(false);
-          notifyListeners();
-        },
-        onError: (error) {
-          _setError('Error cargando proyectos: $error');
-          _setLoading(false);
-        },
-      );
-    } catch (e) {
-      _setError('Error cargando proyectos: $e');
-      _setLoading(false);
-    }
+    _allProjectsSubscription = _firestore
+        .collection('projects')
+        .where('isActive', isEqualTo: true)  
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        _allProjects = snapshot.docs
+            .map((doc) => ProjectModel.fromFirestore(doc))
+            .toList();
+        
+        _updateFeaturedProjects();
+        _setLoading(false);
+        notifyListeners();
+      },
+      onError: (error) {
+        _setError('Error cargando proyectos: $error');
+        _setLoading(false);
+      },
+    );
+  } catch (e) {
+    _setError('Error cargando proyectos: $e');
+    _setLoading(false);
   }
+}
 
   // Cargar mis proyectos con tiempo real
   Future<void> loadMyProjects(String userId) async {
-    try {
-      _setLoading(true);
-      _error = null;
+  try {
+    _setLoading(true);
+    _error = null;
 
-      // Cancelar suscripción anterior si existe
-      await _myProjectsSubscription?.cancel();
+    await _myProjectsSubscription?.cancel();
 
-      // Crear stream para mis proyectos
-      _myProjectsSubscription = _firestore
-          .collection('projects')
-          .where('createdBy', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .listen(
-        (snapshot) {
-          _myProjects = snapshot.docs
-              .map((doc) => ProjectModel.fromFirestore(doc))
-              .toList();
-          
-          _setLoading(false);
-          notifyListeners();
-        },
-        onError: (error) {
-          _setError('Error cargando mis proyectos: $error');
-          _setLoading(false);
-        },
-      );
-    } catch (e) {
-      _setError('Error cargando mis proyectos: $e');
-      _setLoading(false);
-    }
+    _myProjectsSubscription = _firestore
+        .collection('projects')
+        .where('createdBy', isEqualTo: userId)
+        .where('isActive', isEqualTo: true)  
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        _myProjects = snapshot.docs
+            .map((doc) => ProjectModel.fromFirestore(doc))
+            .toList();
+        
+        _setLoading(false);
+        notifyListeners();
+      },
+      onError: (error) {
+        _setError('Error cargando mis proyectos: $error');
+        _setLoading(false);
+      },
+    );
+  } catch (e) {
+    _setError('Error cargando mis proyectos: $e');
+    _setLoading(false);
   }
+}
 
   // Actualizar proyectos destacados
   void _updateFeaturedProjects() {
