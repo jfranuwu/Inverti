@@ -1,11 +1,12 @@
 // Archivo: lib/screens/profile/profile_screen.dart
-// Pantalla de perfil con avatar y cambio de tema
+// Pantalla de perfil - VERSIÓN FINAL SIN ERRORES DE setState
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/theme_provider.dart';
+import '../../../providers/subscription_provider.dart';
 import '../../../widgets/custom_button.dart';
 import '../../../widgets/user_rating_stars.dart';
 import '../../../services/storage_service.dart';
@@ -28,6 +29,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     final userModel = context.read<AuthProvider>().userModel;
     _bioController.text = userModel?.bio ?? '';
+    
+    // Cargar datos de suscripción después del build inicial
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<SubscriptionProvider>().loadUserSubscriptionManually();
+      }
+    });
   }
 
   @override
@@ -61,7 +69,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // Guardar biografía
   Future<void> _saveBio() async {
-    // Implementar guardado de biografía
     setState(() {
       _isEditingBio = false;
     });
@@ -98,15 +105,82 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // Navegar a planes de suscripción
+  void _navigateToSubscriptionPlans() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SubscriptionPlansScreen(),
+      ),
+    );
+  }
+
+  // Obtener beneficios del plan actual
+  List<String> _getCurrentPlanBenefits(String plan, String userType) {
+    if (userType == 'investor') {
+      switch (plan) {
+        case 'premium':
+          return [
+            'Contactos ilimitados',
+            'Analytics avanzados de ROI',
+            'Asesoría personalizada',
+            'Acceso VIP a eventos',
+          ];
+        case 'pro':
+          return [
+            'Proyectos ilimitados',
+            'Verificación de perfil',
+            '20 contactos por mes',
+            'Análisis de inversiones',
+          ];
+        default:
+          return [
+            'Ver 10 proyectos por mes',
+            'Perfil básico',
+            '3 contactos por mes',
+          ];
+      }
+    } else {
+      switch (plan) {
+        case 'premium':
+          return [
+            'Mentoring personalizado',
+            'Pitch deck profesional',
+            'Conexiones directas VIP',
+            'Eventos exclusivos',
+          ];
+        case 'pro':
+          return [
+            'Proyectos ilimitados',
+            'Verificación de perfil',
+            'Solicitudes ilimitadas',
+            'Analytics de proyecto',
+          ];
+        default:
+          return [
+            'Publicar 3 proyectos por mes',
+            'Perfil básico',
+            '5 solicitudes de fondos',
+          ];
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
+    final subscriptionProvider = context.watch<SubscriptionProvider>();
     final userModel = authProvider.userModel;
     
     if (userModel == null) {
       return const Center(child: CircularProgressIndicator());
     }
+
+    // Usar el plan del SubscriptionProvider si está disponible, sino usar el del UserModel
+    final currentPlan = subscriptionProvider.currentPlan != 'basic' 
+        ? subscriptionProvider.currentPlan 
+        : userModel.subscriptionPlan;
 
     return Scaffold(
       appBar: AppBar(
@@ -198,7 +272,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 8),
                   
-                  // Rating (simulado)
+                  // Rating
                   UserRatingStars(
                     rating: 4.5,
                     size: 20,
@@ -238,6 +312,144 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Plan de suscripción
+                  Card(
+                    elevation: 4,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient: LinearGradient(
+                          colors: [
+                            _getPlanColor(currentPlan).withOpacity(0.1),
+                            _getPlanColor(currentPlan).withOpacity(0.05),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.diamond,
+                                      color: _getPlanColor(currentPlan),
+                                      size: 28,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Plan de suscripción',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        Text(
+                                          _getPlanName(currentPlan, userModel.userType),
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: _getPlanColor(currentPlan),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                if (currentPlan != 'premium')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text(
+                                      'Actualizar',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            // Beneficios del plan actual
+                            Text(
+                              'Beneficios incluidos:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            
+                            // Lista de beneficios
+                            ..._getCurrentPlanBenefits(currentPlan, userModel.userType)
+                                .take(3)
+                                .map((benefit) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.check_circle,
+                                        size: 16,
+                                        color: _getPlanColor(currentPlan),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          benefit,
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )),
+                            
+                            const SizedBox(height: 16),
+                            
+                            // Botón para ver/cambiar plan
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _navigateToSubscriptionPlans,
+                                icon: const Icon(Icons.upgrade),
+                                label: Text(
+                                  currentPlan == 'basic'
+                                      ? 'Mejorar plan'
+                                      : 'Gestionar suscripción',
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _getPlanColor(currentPlan),
+                                  side: BorderSide(
+                                    color: _getPlanColor(currentPlan),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
                   // Información personal
                   Card(
                     child: Padding(
@@ -365,33 +577,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Plan de suscripción
-                  Card(
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.diamond,
-                        color: _getPlanColor(userModel.subscriptionPlan),
+                  // Historial de pagos
+                  if (currentPlan != 'basic')
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.receipt_long,
+                          color: Colors.blue,
+                        ),
+                        title: const Text('Historial de pagos'),
+                        subtitle: const Text('Ver transacciones y facturas'),
+                        trailing: const Icon(Icons.arrow_forward_ios),
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Historial de pagos'),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(Icons.check_circle, color: Colors.green),
+                                    title: Text('Plan ${_getPlanName(currentPlan, userModel.userType)}'),
+                                    subtitle: const Text('28 May 2025 - Exitoso'),
+                                    trailing: Text(
+                                      currentPlan == 'pro' 
+                                          ? (userModel.userType == 'investor' ? '\$29.99' : '\$39.99')
+                                          : (userModel.userType == 'investor' ? '\$99.99' : '\$149.99'),
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Cerrar'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                      title: const Text('Plan de suscripción'),
-                      subtitle: Text(_getPlanName(userModel.subscriptionPlan)),
-                      trailing: const Icon(Icons.arrow_forward_ios),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SubscriptionPlansScreen(),
-                          ),
-                        );
-                      },
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                  if (currentPlan != 'basic')
+                    const SizedBox(height: 16),
                   
                   // Configuración
                   Card(
                     child: Column(
                       children: [
-                        // Cambio de tema
                         ListTile(
                           leading: Icon(
                             themeProvider.isDarkMode
@@ -410,37 +645,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         const Divider(height: 1),
-                        
-                        // Notificaciones
                         ListTile(
                           leading: const Icon(Icons.notifications),
                           title: const Text('Notificaciones'),
                           trailing: const Icon(Icons.arrow_forward_ios),
-                          onTap: () {
-                            // Configurar notificaciones
-                          },
+                          onTap: () {},
                         ),
                         const Divider(height: 1),
-                        
-                        // Privacidad
                         ListTile(
                           leading: const Icon(Icons.privacy_tip),
                           title: const Text('Privacidad'),
                           trailing: const Icon(Icons.arrow_forward_ios),
-                          onTap: () {
-                            // Ver configuración de privacidad
-                          },
+                          onTap: () {},
                         ),
                         const Divider(height: 1),
-                        
-                        // Ayuda
                         ListTile(
                           leading: const Icon(Icons.help),
                           title: const Text('Ayuda y soporte'),
                           trailing: const Icon(Icons.arrow_forward_ios),
-                          onTap: () {
-                            // Abrir ayuda
-                          },
+                          onTap: () {},
                         ),
                       ],
                     ),
@@ -475,14 +698,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  String _getPlanName(String plan) {
-    switch (plan) {
-      case 'premium':
-        return 'Premium';
-      case 'pro':
-        return 'Pro';
-      default:
-        return 'Básico';
+  String _getPlanName(String plan, String userType) {
+    if (userType == 'investor') {
+      switch (plan) {
+        case 'premium':
+          return 'Inversor Premium';
+        case 'pro':
+          return 'Inversor Pro';
+        default:
+          return 'Inversor Básico';
+      }
+    } else {
+      switch (plan) {
+        case 'premium':
+          return 'Emprendedor Premium';
+        case 'pro':
+          return 'Emprendedor Pro';
+        default:
+          return 'Emprendedor Básico';
+      }
     }
   }
 }

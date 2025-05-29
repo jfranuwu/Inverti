@@ -21,7 +21,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     OnboardingPage(
       title: 'Bienvenido a Inverti',
       description: 'La plataforma que conecta emprendedores con inversores de manera simple y segura',
-      imagePath: 'assets/images/onboarding/slide1.png',
+      imagePath: 'assets/images/onboarding/slide1.png', // Corregida la ruta
       color: const Color(0xFF2E7D32),
     ),
     OnboardingPage(
@@ -167,18 +167,50 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Imagen placeholder
+              // Imagen real con fallback
               Container(
                 width: 250,
                 height: 250,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Icon(
-                  Icons.image,
-                  size: 100,
-                  color: Colors.white54,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.asset(
+                    page.imagePath,
+                    width: 250,
+                    height: 250,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      // Fallback en caso de error
+                      return Container(
+                        width: 250,
+                        height: 250,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.image_not_supported,
+                              size: 60,
+                              color: Colors.white54,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Imagen no encontrada',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 48),

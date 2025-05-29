@@ -16,7 +16,7 @@ dependencies:
   cloud_firestore: ^4.17.5
   firebase_storage: ^11.7.7
   firebase_messaging: ^14.9.4  # Compatible con notificaciones push
-  
+  flutter_svg: ^2.0.10
   # Autenticación (Google + Email obligatorios)
   google_sign_in: ^6.2.1
   

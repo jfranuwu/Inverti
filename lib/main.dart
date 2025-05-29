@@ -1,5 +1,5 @@
 // Archivo: lib/main.dart
-// Punto de entrada principal de la aplicación Inverti con FCM integrado
+// Punto de entrada principal de la aplicación Inverti con FCM integrado - ACTUALIZADO
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -15,6 +15,7 @@ import 'config/firebase_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/project_provider.dart';
+import 'providers/subscription_provider.dart'; // ⭐ NUEVO
 
 // Importaciones de servicios
 import 'services/notification_service.dart';
@@ -64,6 +65,7 @@ void main() async {
             create: (_) => ThemeProvider(isDarkMode),
           ),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
+          ChangeNotifierProvider(create: (_) => SubscriptionProvider()), // ⭐ NUEVO
         ],
         child: const InvertiApp(),
       ),
@@ -78,6 +80,7 @@ void main() async {
           ChangeNotifierProvider(create: (_) => AuthProvider()),
           ChangeNotifierProvider(create: (_) => ThemeProvider(false)),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
+          ChangeNotifierProvider(create: (_) => SubscriptionProvider()), // ⭐ NUEVO
         ],
         child: const InvertiApp(),
       ),

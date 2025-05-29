@@ -1,5 +1,5 @@
 // Archivo: lib/screens/payments/subscription_plans_screen.dart
-// Pantalla de planes de suscripción (3 planes obligatorios)
+// Pantalla de planes de suscripción - CORREGIDA CON NOMBRES POR ROL
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -17,60 +17,6 @@ class SubscriptionPlansScreen extends StatefulWidget {
 class _SubscriptionPlansScreenState extends State<SubscriptionPlansScreen> {
   String? _selectedPlan;
 
-  // Planes de suscripción
-  final List<SubscriptionPlan> _plans = [
-    SubscriptionPlan(
-      id: 'basic',
-      name: 'Inversor Básico',
-      price: 0,
-      currency: 'USD',
-      period: 'mes',
-      color: Colors.grey,
-      features: [
-        'Ver 10 proyectos por mes',
-        'Perfil básico',
-        '3 contactos por mes',
-        'Soporte por email',
-      ],
-      isPopular: false,
-    ),
-    SubscriptionPlan(
-      id: 'pro',
-      name: 'Inversor Pro',
-      price: 29.99,
-      currency: 'USD',
-      period: 'mes',
-      color: Colors.blue,
-      features: [
-        'Proyectos ilimitados',
-        'Verificación de perfil',
-        '20 contactos por mes',
-        'Análisis básicos',
-        'Soporte prioritario',
-        'Acceso a Quick Pitch',
-      ],
-      isPopular: true,
-    ),
-    SubscriptionPlan(
-      id: 'premium',
-      name: 'Inversor Premium',
-      price: 99.99,
-      currency: 'USD',
-      period: 'mes',
-      color: Colors.purple,
-      features: [
-        'Todo de Pro +',
-        'Contactos ilimitados',
-        'Analytics avanzados',
-        'Asesoría personalizada',
-        'Acceso VIP a eventos',
-        'Badge exclusivo',
-        'API access',
-      ],
-      isPopular: false,
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -79,11 +25,126 @@ class _SubscriptionPlansScreenState extends State<SubscriptionPlansScreen> {
     _selectedPlan = currentPlan;
   }
 
+  // 🆕 FUNCIÓN PARA OBTENER PLANES SEGÚN EL ROL DEL USUARIO
+  List<SubscriptionPlan> _getPlansForUserType(String userType) {
+    if (userType == 'investor') {
+      // PLANES PARA INVERSORES
+      return [
+        SubscriptionPlan(
+          id: 'basic',
+          name: 'Inversor Básico',
+          price: 0,
+          currency: 'USD',
+          period: 'mes',
+          color: Colors.grey,
+          features: [
+            'Ver 10 proyectos por mes',
+            'Perfil básico',
+            '3 contactos por mes',
+            'Soporte por email',
+          ],
+          isPopular: false,
+        ),
+        SubscriptionPlan(
+          id: 'pro',
+          name: 'Inversor Pro',
+          price: 29.99,
+          currency: 'USD',
+          period: 'mes',
+          color: Colors.blue,
+          features: [
+            'Proyectos ilimitados',
+            'Verificación de perfil',
+            '20 contactos por mes',
+            'Análisis de inversiones',
+            'Soporte prioritario',
+            'Acceso a Quick Pitch',
+          ],
+          isPopular: true,
+        ),
+        SubscriptionPlan(
+          id: 'premium',
+          name: 'Inversor Premium',
+          price: 99.99,
+          currency: 'USD',
+          period: 'mes',
+          color: Colors.purple,
+          features: [
+            'Todo de Pro +',
+            'Contactos ilimitados',
+            'Analytics avanzados de ROI',
+            'Asesoría personalizada',
+            'Acceso VIP a eventos',
+            'Badge exclusivo',
+            'API access para portfolios',
+          ],
+          isPopular: false,
+        ),
+      ];
+    } else {
+      // PLANES PARA EMPRENDEDORES
+      return [
+        SubscriptionPlan(
+          id: 'basic',
+          name: 'Emprendedor Básico',
+          price: 0,
+          currency: 'USD',
+          period: 'mes',
+          color: Colors.grey,
+          features: [
+            'Publicar 3 proyectos por mes',
+            'Perfil básico',
+            '5 solicitudes de fondos',
+            'Soporte por email',
+          ],
+          isPopular: false,
+        ),
+        SubscriptionPlan(
+          id: 'pro',
+          name: 'Emprendedor Pro',
+          price: 39.99,
+          currency: 'USD',
+          period: 'mes',
+          color: Colors.blue,
+          features: [
+            'Proyectos ilimitados',
+            'Verificación de perfil',
+            'Solicitudes ilimitadas',
+            'Analytics de proyecto',
+            'Soporte prioritario',
+            'Promoción destacada',
+          ],
+          isPopular: true,
+        ),
+        SubscriptionPlan(
+          id: 'premium',
+          name: 'Emprendedor Premium',
+          price: 149.99,
+          currency: 'USD',
+          period: 'mes',
+          color: Colors.purple,
+          features: [
+            'Todo de Pro +',
+            'Mentoring personalizado',
+            'Pitch deck profesional',
+            'Conexiones directas VIP',
+            'Eventos exclusivos',
+            'Badge verificado',
+            'Promoción premium',
+          ],
+          isPopular: false,
+        ),
+      ];
+    }
+  }
+
   // Proceder al pago
   void _proceedToPayment() {
     if (_selectedPlan == null) return;
     
-    final selectedPlanData = _plans.firstWhere((plan) => plan.id == _selectedPlan);
+    final userType = context.read<AuthProvider>().userModel?.userType ?? 'investor';
+    final plans = _getPlansForUserType(userType);
+    final selectedPlanData = plans.firstWhere((plan) => plan.id == _selectedPlan);
     
     if (selectedPlanData.price == 0) {
       // Plan gratuito - no requiere pago
@@ -108,6 +169,7 @@ class _SubscriptionPlansScreenState extends State<SubscriptionPlansScreen> {
   @override
   Widget build(BuildContext context) {
     final userType = context.watch<AuthProvider>().userModel?.userType ?? 'investor';
+    final plans = _getPlansForUserType(userType); // 🆕 OBTENER PLANES SEGÚN ROL
     
     return Scaffold(
       appBar: AppBar(
@@ -129,7 +191,7 @@ class _SubscriptionPlansScreenState extends State<SubscriptionPlansScreen> {
                 Text(
                   userType == 'investor'
                       ? 'Desbloquea todas las funciones para encontrar las mejores inversiones'
-                      : 'Potencia tu proyecto y conecta con más inversores',
+                      : 'Potencia tu startup y conecta con más inversores calificados',
                   style: TextStyle(
                     color: Colors.grey[600],
                   ),
@@ -143,9 +205,9 @@ class _SubscriptionPlansScreenState extends State<SubscriptionPlansScreen> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _plans.length,
+              itemCount: plans.length,
               itemBuilder: (context, index) {
-                final plan = _plans[index];
+                final plan = plans[index];
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: _PlanCard(
