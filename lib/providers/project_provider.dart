@@ -1,5 +1,5 @@
 // Archivo: lib/providers/project_provider.dart
-// Provider actualizado para manejo de proyectos con tiempo real
+// Provider actualizado para manejo de proyectos con notificaciones automáticas
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -54,71 +54,71 @@ class ProjectProvider with ChangeNotifier {
 
   // Cargar todos los proyectos con tiempo real
   Future<void> loadAllProjects() async {
-  try {
-    _setLoading(true);
-    _error = null;
+    try {
+      _setLoading(true);
+      _error = null;
 
-    await _allProjectsSubscription?.cancel();
+      await _allProjectsSubscription?.cancel();
 
-    _allProjectsSubscription = _firestore
-        .collection('projects')
-        .where('isActive', isEqualTo: true)  
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .listen(
-      (snapshot) {
-        _allProjects = snapshot.docs
-            .map((doc) => ProjectModel.fromFirestore(doc))
-            .toList();
-        
-        _updateFeaturedProjects();
-        _setLoading(false);
-        notifyListeners();
-      },
-      onError: (error) {
-        _setError('Error cargando proyectos: $error');
-        _setLoading(false);
-      },
-    );
-  } catch (e) {
-    _setError('Error cargando proyectos: $e');
-    _setLoading(false);
+      _allProjectsSubscription = _firestore
+          .collection('projects')
+          .where('isActive', isEqualTo: true)  
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .listen(
+        (snapshot) {
+          _allProjects = snapshot.docs
+              .map((doc) => ProjectModel.fromFirestore(doc))
+              .toList();
+          
+          _updateFeaturedProjects();
+          _setLoading(false);
+          notifyListeners();
+        },
+        onError: (error) {
+          _setError('Error cargando proyectos: $error');
+          _setLoading(false);
+        },
+      );
+    } catch (e) {
+      _setError('Error cargando proyectos: $e');
+      _setLoading(false);
+    }
   }
-}
 
   // Cargar mis proyectos con tiempo real
   Future<void> loadMyProjects(String userId) async {
-  try {
-    _setLoading(true);
-    _error = null;
+    try {
+      _setLoading(true);
+      _error = null;
 
-    await _myProjectsSubscription?.cancel();
+      await _myProjectsSubscription?.cancel();
 
-    _myProjectsSubscription = _firestore
-        .collection('projects')
-        .where('createdBy', isEqualTo: userId)
-        .where('isActive', isEqualTo: true)  
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .listen(
-      (snapshot) {
-        _myProjects = snapshot.docs
-            .map((doc) => ProjectModel.fromFirestore(doc))
-            .toList();
-        
-        _setLoading(false);
-        notifyListeners();
-      },
-      onError: (error) {
-        _setError('Error cargando mis proyectos: $error');
-        _setLoading(false);
-      },
-    );
-  } catch (e) {
-    _setError('Error cargando mis proyectos: $e');
-    _setLoading(false);
+      _myProjectsSubscription = _firestore
+          .collection('projects')
+          .where('createdBy', isEqualTo: userId)
+          .where('isActive', isEqualTo: true)  
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .listen(
+        (snapshot) {
+          _myProjects = snapshot.docs
+              .map((doc) => ProjectModel.fromFirestore(doc))
+              .toList();
+          
+          _setLoading(false);
+          notifyListeners();
+        },
+        onError: (error) {
+          _setError('Error cargando mis proyectos: $error');
+          _setLoading(false);
+        },
+      );
+    } catch (e) {
+      _setError('Error cargando mis proyectos: $e');
+      _setLoading(false);
+    }
   }
-}
 
   // Actualizar proyectos destacados
   void _updateFeaturedProjects() {
@@ -128,7 +128,7 @@ class ProjectProvider with ChangeNotifier {
         .toList();
   }
 
-  // Crear nuevo proyecto
+  // Crear nuevo proyecto CON NOTIFICACIÓN AUTOMÁTICA
   Future<String?> createProject(ProjectModel project) async {
     try {
       _setLoading(true);
@@ -144,8 +144,26 @@ class ProjectProvider with ChangeNotifier {
         'fundingPercentage': 0.0,
       });
 
-      _setLoading(false);
       debugPrint('✅ Proyecto creado con ID: ${docRef.id}');
+
+      // 🚀 ENVIAR NOTIFICACIÓN A INVERSORES AUTOMÁTICAMENTE
+      try {
+        final entrepreneurName = project.metadata['entrepreneurName'] as String? ?? 'Emprendedor';
+        
+        await _fcmService.sendNewProjectNotification(
+          projectId: docRef.id,
+          projectTitle: project.title,
+          entrepreneurName: entrepreneurName,
+          category: project.category,
+        );
+        
+        debugPrint('✅ Notificación de nuevo proyecto enviada a inversores');
+      } catch (notificationError) {
+        // No fallar la creación del proyecto por error de notificación
+        debugPrint('⚠️ Error enviando notificación de nuevo proyecto: $notificationError');
+      }
+
+      _setLoading(false);
       return docRef.id;
     } catch (e) {
       _setError('Error creando proyecto: $e');
@@ -201,7 +219,7 @@ class ProjectProvider with ChangeNotifier {
     }
   }
 
-  // Registrar interés de inversor
+  // Registrar interés de inversor CON NOTIFICACIÓN AUTOMÁTICA
   Future<bool> registerInvestorInterest({
     required String projectId,
     required String investorId,
@@ -241,13 +259,20 @@ class ProjectProvider with ChangeNotifier {
       if (projectDoc.exists) {
         final project = ProjectModel.fromFirestore(projectDoc);
         
-        // 4. Enviar notificación al emprendedor
-        await _fcmService.sendInvestorInterestNotification(
-          entrepreneurId: project.createdBy,
-          projectId: projectId,
-          projectTitle: project.title,
-          investorName: investorName,
-        );
+        // 🚀 ENVIAR NOTIFICACIÓN AL EMPRENDEDOR AUTOMÁTICAMENTE
+        try {
+          await _fcmService.sendInvestorInterestNotification(
+            entrepreneurId: project.createdBy,
+            projectId: projectId,
+            projectTitle: project.title,
+            investorName: investorName,
+          );
+          
+          debugPrint('✅ Notificación de interés enviada al emprendedor');
+        } catch (notificationError) {
+          // No fallar el registro de interés por error de notificación
+          debugPrint('⚠️ Error enviando notificación de interés: $notificationError');
+        }
       }
 
       _setLoading(false);

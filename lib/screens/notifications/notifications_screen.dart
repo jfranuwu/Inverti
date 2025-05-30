@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/notification_service.dart';
+import '../../services/fcm_service.dart'; // Agregar import
 import '../../models/notification_model.dart';
 import '../../widgets/custom_card.dart';
 import '../project/project_detail_screen.dart';
@@ -96,6 +97,19 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 icon: const Icon(Icons.more_vert),
                 enabled: !_isMarkingAllAsRead,
                 itemBuilder: (context) => [
+                  // Botón de prueba FCM
+                  const PopupMenuItem(
+                    value: 'test_fcm',
+                    child: Row(
+                      children: [
+                        Icon(Icons.bug_report, color: Colors.purple),
+                        SizedBox(width: 8),
+                        Text('🧪 Probar FCM'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  
                   if (hasUnread)
                     PopupMenuItem(
                       value: 'mark_all_read',
@@ -119,7 +133,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   ),
                 ],
                 onSelected: (value) async {
-                  if (value == 'mark_all_read') {
+                  if (value == 'test_fcm') {
+                    await _testFCMNotification();
+                  } else if (value == 'mark_all_read') {
                     await _markAllAsRead();
                   } else if (value == 'settings') {
                     _showNotificationSettings();
@@ -167,6 +183,124 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         },
       ),
     );
+  }
+
+  // Método para probar FCM
+  Future<void> _testFCMNotification() async {
+    // Mostrar diálogo de confirmación
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.bug_report, color: Colors.purple),
+            SizedBox(width: 8),
+            Text('Probar FCM'),
+          ],
+        ),
+        content: const Text(
+          'Esto enviará una notificación de prueba a tu dispositivo. '
+          'Si FCM está configurado correctamente, deberías recibirla.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Enviar Prueba'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Mostrar loading
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Enviando notificación de prueba...'),
+            ],
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+
+    try {
+      // Verificar estado FCM primero
+      if (!FCMService().isInitialized) {
+        throw Exception('FCM Service no está inicializado');
+      }
+
+      if (FCMService().fcmToken == null) {
+        throw Exception('No se encontró token FCM');
+      }
+
+      // Llamar al método de prueba
+      await FCMService().testNotification();
+
+      // Mostrar éxito
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Flexible(
+  child: Text('✅ Notificación enviada exitosamente'),
+),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+    } catch (e) {
+      // Mostrar error
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.error, color: Colors.white),
+                    SizedBox(width: 12),
+                    Text('❌ Error al enviar prueba FCM'),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Error: $e',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildNotificationsList(
