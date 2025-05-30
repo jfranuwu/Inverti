@@ -1,10 +1,11 @@
 // Archivo: lib/providers/auth_provider.dart
-// Provider para gestión de autenticación con Firebase - CON NOTIFICACIONES FCM
+// Provider para gestión de autenticación - LOGOUT CORREGIDO Y MEJORADO
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import '../models/user_model.dart';
 import '../config/firebase_config.dart';
 import '../services/fcm_service.dart';
@@ -19,102 +20,133 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _mounted = true;
+  bool _isSigningOut = false; // Para prevenir operaciones durante logout
+  
+  // Subscripción al stream de autenticación
+  StreamSubscription<User?>? _authStateSubscription;
   
   // Getters
   User? get user => _user;
   UserModel? get userModel => _userModel;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  bool get isAuthenticated => _user != null;
+  bool get isAuthenticated => _user != null && !_isSigningOut;
   bool get mounted => _mounted;
   
   AuthProvider() {
-    _auth.authStateChanges().listen(_onAuthStateChanged);
+    _initializeAuthListener();
+  }
+  
+  // Inicializar listener de autenticación de forma controlada
+  void _initializeAuthListener() {
+    _authStateSubscription = _auth.authStateChanges().listen(
+      _onAuthStateChanged,
+      onError: (error) {
+        debugPrint('❌ Error en auth state listener: $error');
+        _error = 'Error de autenticación: $error';
+        if (_mounted && !_isSigningOut) {
+          notifyListeners();
+        }
+      },
+    );
   }
   
   @override
   void dispose() {
     _mounted = false;
+    _authStateSubscription?.cancel();
     super.dispose();
   }
   
-  // Manejar cambios de estado de autenticación
+  // Manejar cambios de estado de autenticación - MEJORADO
   Future<void> _onAuthStateChanged(User? user) async {
-    print('Auth state changed: ${user?.uid}');
-    _user = user;
-    if (user != null) {
-      await _loadUserData(user.uid);
-      // Configurar FCM después del login
-      await _setupFCMForUser(user.uid);
-    } else {
-      _userModel = null;
-      // Limpiar FCM al hacer logout
-      await _cleanupFCMOnLogout();
+    // No procesar cambios si estamos en logout o widget no montado
+    if (_isSigningOut || !_mounted) {
+      debugPrint('🚫 Saltando auth state change: isSigningOut=$_isSigningOut, mounted=$_mounted');
+      return;
     }
     
-    if (_mounted) {
-      notifyListeners();
+    debugPrint('🔄 Auth state changed: ${user?.uid}');
+    
+    // Solo cambiar el usuario si realmente cambió
+    if (_user?.uid != user?.uid) {
+      _user = user;
+      
+      if (user != null) {
+        try {
+          await _loadUserData(user.uid);
+          
+          // Solo configurar FCM si no estamos haciendo logout
+          if (!_isSigningOut && _mounted) {
+            await _setupFCMForUser(user.uid);
+          }
+        } catch (e) {
+          debugPrint('❌ Error cargando datos en auth change: $e');
+          _error = 'Error al cargar datos del usuario: $e';
+        }
+      } else {
+        _userModel = null;
+      }
+      
+      // Solo notificar si el widget está montado y no estamos haciendo logout
+      if (_mounted && !_isSigningOut) {
+        notifyListeners();
+      }
     }
   }
   
   // Cargar datos del usuario desde Firestore
   Future<void> _loadUserData(String uid) async {
     try {
-      print('Loading user data for: $uid');
+      debugPrint('📖 Cargando datos de usuario: $uid');
       final doc = await _firestore
           .collection(FirebaseConfig.usersCollection)
           .doc(uid)
           .get();
       
       if (doc.exists) {
-        print('User document found');
         _userModel = UserModel.fromFirestore(doc);
-        print('UserModel loaded: ${_userModel?.name}, userType: ${_userModel?.userType}');
+        debugPrint('✅ UserModel cargado: ${_userModel?.name}, tipo: ${_userModel?.userType}');
       } else {
-        print('User document not found');
+        debugPrint('⚠️ Documento de usuario no encontrado');
       }
     } catch (e) {
-      print('Error loading user data: $e');
+      debugPrint('❌ Error cargando datos de usuario: $e');
       _error = 'Error al cargar datos del usuario: $e';
     }
     
-    if (_mounted) {
+    if (_mounted && !_isSigningOut) {
       notifyListeners();
     }
   }
   
-  // Configurar FCM para el usuario
+  // Configurar FCM para el usuario - CON VERIFICACIONES ADICIONALES
   Future<void> _setupFCMForUser(String userId) async {
+    if (_isSigningOut || !_mounted) return;
+    
     try {
-      print('🔔 Configurando FCM para usuario: $userId');
+      debugPrint('🔔 Configurando FCM para usuario: $userId');
       
-      // Guardar token FCM después del login
+      // Verificar que FCM esté inicializado
+      if (!FCMService().isInitialized) {
+        debugPrint('⚠️ FCM Service no está inicializado, saltando configuración');
+        return;
+      }
+      
       await FCMService().saveTokenAfterLogin(userId);
       
-      // Suscribir a temas según el tipo de usuario
       if (_userModel?.userType == 'investor') {
         await FCMService().subscribeToTopic('new_projects');
         await FCMService().unsubscribeFromTopic('investor_interest');
-        print('✅ Inversor suscrito a nuevos proyectos');
+        debugPrint('✅ Inversor suscrito a nuevos proyectos');
       } else if (_userModel?.userType == 'entrepreneur') {
         await FCMService().subscribeToTopic('investor_interest');
         await FCMService().unsubscribeFromTopic('new_projects');
-        print('✅ Emprendedor suscrito a interés de inversores');
+        debugPrint('✅ Emprendedor suscrito a interés de inversores');
       }
     } catch (e) {
-      print('❌ Error configurando FCM: $e');
-    }
-  }
-  
-  // Limpiar FCM al cerrar sesión
-  Future<void> _cleanupFCMOnLogout() async {
-    try {
-      print('🧹 Limpiando FCM al cerrar sesión');
-      await FCMService().clearTokenOnLogout();
-      await FCMService().unsubscribeFromTopic('new_projects');
-      await FCMService().unsubscribeFromTopic('investor_interest');
-    } catch (e) {
-      print('❌ Error limpiando FCM: $e');
+      debugPrint('❌ Error configurando FCM: $e');
+      // No propagar el error para no afectar el login
     }
   }
   
@@ -125,12 +157,14 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String userType,
   }) async {
+    if (_isSigningOut) return false;
+    
     try {
       _isLoading = true;
       _error = null;
       if (_mounted) notifyListeners();
       
-      print('Starting registration for: $email');
+      debugPrint('Starting registration for: $email');
       
       final credential = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
@@ -138,7 +172,7 @@ class AuthProvider extends ChangeNotifier {
       );
       
       if (credential.user != null) {
-        print('User created with UID: ${credential.user!.uid}');
+        debugPrint('User created with UID: ${credential.user!.uid}');
         
         final userModel = UserModel(
           uid: credential.user!.uid,
@@ -153,16 +187,18 @@ class AuthProvider extends ChangeNotifier {
             .doc(credential.user!.uid)
             .set(userModel.toFirestore());
         
-        print('User saved to Firestore');
+        debugPrint('User saved to Firestore');
         
-        // Configurar FCM para nuevo usuario
-        await _setupFCMForUser(credential.user!.uid);
+        // Configurar FCM para nuevo usuario (solo si está montado)
+        if (_mounted && !_isSigningOut) {
+          await _setupFCMForUser(credential.user!.uid);
+        }
         
         try {
           await credential.user!.sendEmailVerification();
-          print('Verification email sent');
+          debugPrint('Verification email sent');
         } catch (e) {
-          print('Error sending verification email: $e');
+          debugPrint('Error sending verification email: $e');
         }
         
         _userModel = userModel;
@@ -171,10 +207,10 @@ class AuthProvider extends ChangeNotifier {
         return true;
       }
     } on FirebaseAuthException catch (e) {
-      print('FirebaseAuthException: ${e.code} - ${e.message}');
+      debugPrint('FirebaseAuthException: ${e.code} - ${e.message}');
       _error = _handleAuthError(e);
     } catch (e) {
-      print('General error during registration: $e');
+      debugPrint('General error during registration: $e');
       _error = 'Error en el registro: $e';
     }
     
@@ -188,12 +224,14 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
+    if (_isSigningOut) return false;
+    
     try {
       _isLoading = true;
       _error = null;
       if (_mounted) notifyListeners();
       
-      print('Signing in with email: $email');
+      debugPrint('Signing in with email: $email');
       
       final credential = await _auth.signInWithEmailAndPassword(
         email: email.trim(),
@@ -201,16 +239,16 @@ class AuthProvider extends ChangeNotifier {
       );
       
       if (credential.user != null) {
-        print('Sign in successful: ${credential.user!.uid}');
+        debugPrint('Sign in successful: ${credential.user!.uid}');
         _isLoading = false;
         if (_mounted) notifyListeners();
         return true;
       }
     } on FirebaseAuthException catch (e) {
-      print('FirebaseAuthException during sign in: ${e.code} - ${e.message}');
+      debugPrint('FirebaseAuthException during sign in: ${e.code} - ${e.message}');
       _error = _handleAuthError(e);
     } catch (e) {
-      print('General error during sign in: $e');
+      debugPrint('General error during sign in: $e');
       _error = 'Error en el inicio de sesión: $e';
     }
     
@@ -221,24 +259,26 @@ class AuthProvider extends ChangeNotifier {
   
   // Inicio de sesión con Google
   Future<bool> signInWithGoogle() async {
+    if (_isSigningOut) return false;
+    
     try {
       _isLoading = true;
       _error = null;
       if (_mounted) notifyListeners();
       
-      print('Starting Google Sign In...');
+      debugPrint('Starting Google Sign In...');
       
       await _googleSignIn.signOut();
       
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        print('Google Sign In cancelled by user');
+        debugPrint('Google Sign In cancelled by user');
         _isLoading = false;
         if (_mounted) notifyListeners();
         return false;
       }
       
-      print('Google user: ${googleUser.email}');
+      debugPrint('Google user: ${googleUser.email}');
       
       final GoogleSignInAuthentication googleAuth = 
           await googleUser.authentication;
@@ -251,7 +291,7 @@ class AuthProvider extends ChangeNotifier {
       final userCredential = await _auth.signInWithCredential(credential);
       
       if (userCredential.user != null) {
-        print('Firebase sign in successful: ${userCredential.user!.uid}');
+        debugPrint('Firebase sign in successful: ${userCredential.user!.uid}');
         
         final doc = await _firestore
             .collection(FirebaseConfig.usersCollection)
@@ -259,7 +299,7 @@ class AuthProvider extends ChangeNotifier {
             .get();
         
         if (!doc.exists) {
-          print('Creating new user document in Firestore');
+          debugPrint('Creating new user document in Firestore');
           final userModel = UserModel(
             uid: userCredential.user!.uid,
             email: userCredential.user!.email ?? '',
@@ -275,21 +315,23 @@ class AuthProvider extends ChangeNotifier {
               .set(userModel.toFirestore());
               
           _userModel = userModel;
-          print('New user model created and loaded');
+          debugPrint('New user model created and loaded');
         } else {
           _userModel = UserModel.fromFirestore(doc);
-          print('Existing user model loaded');
+          debugPrint('Existing user model loaded');
         }
         
-        // Configurar FCM para usuario existente o nuevo
-        await _setupFCMForUser(userCredential.user!.uid);
+        // Configurar FCM para usuario (solo si está montado)
+        if (_mounted && !_isSigningOut) {
+          await _setupFCMForUser(userCredential.user!.uid);
+        }
         
         _isLoading = false;
         if (_mounted) notifyListeners();
         return true;
       }
     } catch (e) {
-      print('Error with Google Sign-In: $e');
+      debugPrint('Error with Google Sign-In: $e');
       _error = 'Error con Google Sign-In: $e';
     }
     
@@ -300,20 +342,20 @@ class AuthProvider extends ChangeNotifier {
   
   // Actualizar tipo de usuario (rol)
   Future<bool> updateUserType(String userType) async {
-    if (_user == null) {
-      print('Error: No hay usuario autenticado');
+    if (_user == null || _isSigningOut) {
+      debugPrint('Error: No hay usuario autenticado o estamos en logout');
       _error = 'No hay usuario autenticado';
       return false;
     }
     
     if (_userModel == null) {
-      print('UserModel es null, intentando cargar...');
+      debugPrint('UserModel es null, intentando cargar...');
       await _loadUserData(_user!.uid);
       
       await Future.delayed(const Duration(milliseconds: 500));
       
       if (_userModel == null) {
-        print('No se pudo cargar el modelo de usuario');
+        debugPrint('No se pudo cargar el modelo de usuario');
         _error = 'No se pudo cargar la información del usuario';
         return false;
       }
@@ -323,7 +365,7 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = true;
       if (_mounted) notifyListeners();
       
-      print('Updating user type to: $userType for user: ${_user!.uid}');
+      debugPrint('Updating user type to: $userType for user: ${_user!.uid}');
       
       await _firestore
           .collection(FirebaseConfig.usersCollection)
@@ -332,16 +374,18 @@ class AuthProvider extends ChangeNotifier {
       
       _userModel = _userModel!.copyWith(userType: userType);
       
-      print('User type updated successfully in both Firestore and local model');
+      debugPrint('User type updated successfully in both Firestore and local model');
       
-      // Reconfigurar FCM con el nuevo rol
-      await _setupFCMForUser(_user!.uid);
+      // Reconfigurar FCM con el nuevo rol (solo si está montado)
+      if (_mounted && !_isSigningOut) {
+        await _setupFCMForUser(_user!.uid);
+      }
       
       _isLoading = false;
       if (_mounted) notifyListeners();
       return true;
     } catch (e) {
-      print('Error updating user type: $e');
+      debugPrint('Error updating user type: $e');
       _error = 'Error al actualizar el tipo de usuario: $e';
       _isLoading = false;
       if (_mounted) notifyListeners();
@@ -349,28 +393,91 @@ class AuthProvider extends ChangeNotifier {
     }
   }
   
-  // Cerrar sesión
+  // LOGOUT MEJORADO - Versión definitiva y segura
   Future<void> signOut() async {
+    if (_isSigningOut) {
+      debugPrint('⚠️ Logout ya en progreso, ignorando...');
+      return;
+    }
+    
+    _isSigningOut = true;
+    
     try {
-      print('Signing out...');
+      debugPrint('🚪 Iniciando logout seguro...');
       
-      // Limpiar FCM antes de cerrar sesión
-      await _cleanupFCMOnLogout();
+      // 1. Pausar listener para evitar conflictos
+      await _authStateSubscription?.cancel();
       
-      await _auth.signOut();
-      await _googleSignIn.signOut();
+      // 2. Limpiar FCM de forma segura
+      await _safeFCMCleanup();
+      
+      // 3. Limpiar estado local
       _user = null;
       _userModel = null;
+      _error = null;
+      _isLoading = false;
       
+      // 4. Hacer logout de servicios
+      await Future.wait([
+        _auth.signOut(),
+        _googleSignIn.signOut(),
+      ]);
+      
+      debugPrint('✅ Logout completado exitosamente');
+      
+      // 5. Reactivar listener después de un delay
+      await Future.delayed(const Duration(milliseconds: 500));
       if (_mounted) {
-        notifyListeners();
+        _initializeAuthListener();
       }
+      
     } catch (e) {
-      print('Error signing out: $e');
+      debugPrint('❌ Error durante logout: $e');
       _error = 'Error al cerrar sesión: $e';
+      
+      // Reactivar listener en caso de error
+      if (_mounted) {
+        _initializeAuthListener();
+      }
+    } finally {
+      _isSigningOut = false;
+      
+      // Notificar cambios solo si el widget está montado
       if (_mounted) {
         notifyListeners();
       }
+    }
+  }
+  
+  // Limpieza segura de FCM durante logout
+  Future<void> _safeFCMCleanup() async {
+    try {
+      debugPrint('🧹 Iniciando limpieza segura de FCM...');
+      
+      // Verificar que FCM esté disponible
+      if (!FCMService().isInitialized) {
+        debugPrint('⚠️ FCM Service no inicializado, saltando limpieza');
+        return;
+      }
+      
+      // Hacer limpieza con timeout reducido
+      await Future.wait([
+        FCMService().clearTokenOnLogout(),
+        FCMService().unsubscribeFromTopic('new_projects'),
+        FCMService().unsubscribeFromTopic('investor_interest'),
+      ]).timeout(
+        const Duration(seconds: 3), // Timeout reducido
+        onTimeout: () {
+          debugPrint('⚠️ Timeout en limpieza FCM - continuando logout');
+          return [];
+        },
+      );
+      
+      debugPrint('✅ Limpieza FCM completada');
+      
+    } catch (e) {
+      debugPrint('⚠️ Error en limpieza FCM (no crítico): $e');
+      // No lanzar error para no bloquear el logout
     }
   }
   
@@ -412,7 +519,7 @@ class AuthProvider extends ChangeNotifier {
   
   // Actualizar foto de perfil
   Future<bool> updateProfilePhoto(String photoURL) async {
-    if (_user == null) return false;
+    if (_user == null || _isSigningOut) return false;
     
     try {
       _isLoading = true;
@@ -442,7 +549,7 @@ class AuthProvider extends ChangeNotifier {
   
   // Manejar errores de autenticación
   String _handleAuthError(FirebaseAuthException e) {
-    print('Handling auth error: ${e.code}');
+    debugPrint('Handling auth error: ${e.code}');
     switch (e.code) {
       case 'weak-password':
         return 'La contraseña es muy débil';
@@ -473,7 +580,7 @@ class AuthProvider extends ChangeNotifier {
   
   // Obtener token FCM del usuario actual
   Future<String?> getCurrentUserFCMToken() async {
-    if (_user != null) {
+    if (_user != null && !_isSigningOut) {
       try {
         final doc = await _firestore
             .collection(FirebaseConfig.usersCollection)
@@ -485,7 +592,7 @@ class AuthProvider extends ChangeNotifier {
           return data['fcmToken'] as String?;
         }
       } catch (e) {
-        print('Error obteniendo token FCM: $e');
+        debugPrint('Error obteniendo token FCM: $e');
       }
     }
     return null;
@@ -497,7 +604,7 @@ class AuthProvider extends ChangeNotifier {
     String? photoURL,
     Map<String, dynamic>? additionalData,
   }) async {
-    if (_user == null) return false;
+    if (_user == null || _isSigningOut) return false;
     
     try {
       _isLoading = true;
@@ -534,7 +641,7 @@ class AuthProvider extends ChangeNotifier {
       if (_mounted) notifyListeners();
       return true;
     } catch (e) {
-      print('Error actualizando información del usuario: $e');
+      debugPrint('Error actualizando información del usuario: $e');
       _error = 'Error al actualizar información: $e';
       _isLoading = false;
       if (_mounted) notifyListeners();
@@ -544,12 +651,14 @@ class AuthProvider extends ChangeNotifier {
   
   // Verificar estado de verificación de email
   Future<void> refreshUser() async {
+    if (_isSigningOut) return;
+    
     try {
       await _user?.reload();
       _user = _auth.currentUser;
       if (_mounted) notifyListeners();
     } catch (e) {
-      print('Error refreshing user: $e');
+      debugPrint('Error refreshing user: $e');
     }
   }
 }

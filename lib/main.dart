@@ -15,7 +15,7 @@ import 'config/firebase_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/project_provider.dart';
-import 'providers/subscription_provider.dart'; // ⭐ NUEVO
+import 'providers/subscription_provider.dart'; 
 
 // Importaciones de servicios
 import 'services/notification_service.dart';
@@ -23,6 +23,7 @@ import 'services/fcm_service.dart';
 
 // Importaciones de pantallas
 import 'screens/splash_screen.dart';
+import 'widgets/auth_wrapper.dart';
 
 // Handler para mensajes en segundo plano
 @pragma('vm:entry-point')
@@ -65,7 +66,7 @@ void main() async {
             create: (_) => ThemeProvider(isDarkMode),
           ),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
-          ChangeNotifierProvider(create: (_) => SubscriptionProvider()), // ⭐ NUEVO
+          ChangeNotifierProvider(create: (_) => SubscriptionProvider()), 
         ],
         child: const InvertiApp(),
       ),
@@ -80,7 +81,7 @@ void main() async {
           ChangeNotifierProvider(create: (_) => AuthProvider()),
           ChangeNotifierProvider(create: (_) => ThemeProvider(false)),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
-          ChangeNotifierProvider(create: (_) => SubscriptionProvider()), // ⭐ NUEVO
+          ChangeNotifierProvider(create: (_) => SubscriptionProvider()), 
         ],
         child: const InvertiApp(),
       ),
@@ -130,7 +131,8 @@ class InvertiApp extends StatelessWidget {
           themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           
           // Pantalla inicial - Splash Screen (como en tu versión original)
-          home: const SplashScreen(),
+          //home: const SplashScreen(),
+          home: const AuthWrapper(),
         );
       },
     );

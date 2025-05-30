@@ -1,5 +1,5 @@
 // Archivo: lib/screens/profile/profile_screen.dart
-// Pantalla de perfil - VERSIÓN FINAL SIN ERRORES DE setState
+// Pantalla de perfil - VERSIÓN FINAL SIN ERRORES DE setState Y SIN NAVEGACIÓN
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +11,6 @@ import '../../../widgets/custom_button.dart';
 import '../../../widgets/user_rating_stars.dart';
 import '../../../services/storage_service.dart';
 import '../payments/subscription_plans_screen.dart';
-import '../auth/login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,6 +22,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isEditingBio = false;
   final _bioController = TextEditingController();
+  bool _isSigningOut = false; // Para prevenir múltiples llamadas
 
   @override
   void initState() {
@@ -49,7 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.user?.uid;
     
-    if (userId == null) return;
+    if (userId == null || _isSigningOut) return;
     
     final photoUrl = await StorageService.uploadProfileImage(userId);
     
@@ -74,39 +74,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // Cerrar sesión
+  // LOGOUT SIMPLIFICADO - Solo llama al AuthProvider, NO maneja navegación
   Future<void> _signOut() async {
-    showDialog(
+    if (_isSigningOut) return; // Prevenir múltiples llamadas
+    
+    final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      barrierDismissible: false, // Prevenir cerrar accidentalmente
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Cerrar sesión'),
         content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await context.read<AuthProvider>().signOut();
-              if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
-            },
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Cerrar sesión'),
           ),
         ],
       ),
     );
+
+    if (result != true || !mounted) return;
+
+    setState(() {
+      _isSigningOut = true;
+    });
+
+    try {
+      // Solo llamar al AuthProvider - NO manejar navegación aquí
+      // El AuthWrapper se encargará automáticamente de la navegación
+      await context.read<AuthProvider>().signOut();
+      
+      debugPrint('✅ Logout iniciado desde ProfileScreen');
+      
+    } catch (e) {
+      debugPrint('❌ Error en logout desde ProfileScreen: $e');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cerrar sesión: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSigningOut = false;
+        });
+      }
+    }
   }
 
   // Navegar a planes de suscripción
   void _navigateToSubscriptionPlans() {
+    if (_isSigningOut) return;
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -188,7 +215,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () {
+            onPressed: _isSigningOut ? null : () {
               // Navegar a configuración
             },
           ),
@@ -216,7 +243,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             : null,
                         child: userModel.photoURL == null
                             ? Text(
-                                userModel.name[0].toUpperCase(),
+                                userModel.name.isNotEmpty 
+                                    ? userModel.name[0].toUpperCase()
+                                    : 'U',
                                 style: const TextStyle(
                                   fontSize: 48,
                                   color: Colors.white,
@@ -229,7 +258,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         bottom: 0,
                         right: 0,
                         child: IconButton(
-                          onPressed: _updateProfilePhoto,
+                          onPressed: _isSigningOut ? null : _updateProfilePhoto,
                           icon: const Icon(Icons.camera_alt),
                           style: IconButton.styleFrom(
                             backgroundColor: Theme.of(context).primaryColor,
@@ -427,7 +456,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: OutlinedButton.icon(
-                                onPressed: _navigateToSubscriptionPlans,
+                                onPressed: _isSigningOut ? null : _navigateToSubscriptionPlans,
                                 icon: const Icon(Icons.upgrade),
                                 label: Text(
                                   currentPlan == 'basic'
@@ -539,7 +568,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 icon: Icon(
                                   _isEditingBio ? Icons.check : Icons.edit,
                                 ),
-                                onPressed: () {
+                                onPressed: _isSigningOut ? null : () {
                                   if (_isEditingBio) {
                                     _saveBio();
                                   } else {
@@ -588,7 +617,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         title: const Text('Historial de pagos'),
                         subtitle: const Text('Ver transacciones y facturas'),
                         trailing: const Icon(Icons.arrow_forward_ios),
-                        onTap: () {
+                        onTap: _isSigningOut ? null : () {
                           showDialog(
                             context: context,
                             builder: (context) => AlertDialog(
@@ -639,7 +668,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           trailing: Switch(
                             value: themeProvider.isDarkMode,
-                            onChanged: (value) {
+                            onChanged: _isSigningOut ? null : (value) {
                               themeProvider.toggleTheme();
                             },
                           ),
@@ -649,33 +678,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           leading: const Icon(Icons.notifications),
                           title: const Text('Notificaciones'),
                           trailing: const Icon(Icons.arrow_forward_ios),
-                          onTap: () {},
+                          onTap: _isSigningOut ? null : () {},
                         ),
                         const Divider(height: 1),
                         ListTile(
                           leading: const Icon(Icons.privacy_tip),
                           title: const Text('Privacidad'),
                           trailing: const Icon(Icons.arrow_forward_ios),
-                          onTap: () {},
+                          onTap: _isSigningOut ? null : () {},
                         ),
                         const Divider(height: 1),
                         ListTile(
                           leading: const Icon(Icons.help),
                           title: const Text('Ayuda y soporte'),
                           trailing: const Icon(Icons.arrow_forward_ios),
-                          onTap: () {},
+                          onTap: _isSigningOut ? null : () {},
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 24),
                   
-                  // Botón cerrar sesión
+                  // Botón cerrar sesión SIMPLIFICADO
                   CustomButton(
-                    text: 'Cerrar sesión',
-                    onPressed: _signOut,
+                    text: _isSigningOut ? 'Cerrando sesión...' : 'Cerrar sesión',
+                    onPressed: _isSigningOut ? null : _signOut,
                     color: Colors.red,
-                    icon: Icons.logout,
+                    icon: _isSigningOut ? null : Icons.logout,
+                    isLoading: _isSigningOut,
                   ),
                   const SizedBox(height: 32),
                 ],
