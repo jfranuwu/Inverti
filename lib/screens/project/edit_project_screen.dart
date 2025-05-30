@@ -1,5 +1,5 @@
 // Archivo: lib/screens/project/edit_project_screen.dart
-// Pantalla para editar proyectos existentes
+// Pantalla para editar proyectos existentes - CON QUICK PITCH COMPLETO
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +8,9 @@ import '../../providers/project_provider.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/image_picker_widget.dart';
+import '../../widgets/audio_recorder_widget.dart';
+import '../../widgets/audio_player_widget.dart';
+import '../../services/storage_service.dart';
 
 class EditProjectScreen extends StatefulWidget {
   final ProjectModel project;
@@ -39,7 +42,10 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
   String _selectedCategory = '';
   String? _selectedImageUrl;
   List<String> _selectedImages = [];
+  String? _currentQuickPitchUrl;
+  String? _newQuickPitchPath;
   bool _isLoading = false;
+  bool _showRecorder = false;
 
   // Categorías disponibles
   final List<String> _categories = [
@@ -77,6 +83,9 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
     _selectedCategory = project.category;
     _selectedImageUrl = project.imageUrl;
     _selectedImages = List.from(project.images);
+    
+    // Inicializar Quick Pitch
+    _currentQuickPitchUrl = project.metadata['quickPitchUrl'] as String?;
   }
 
   @override
@@ -95,6 +104,9 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Editar Proyecto'),
@@ -124,6 +136,7 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
               _buildSectionTitle('Información Básica'),
               const SizedBox(height: 16),
               
+              // Título del proyecto
               CustomTextField(
                 controller: _titleController,
                 label: 'Título del proyecto',
@@ -143,14 +156,49 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
               // Categoría
               DropdownButtonFormField<String>(
                 value: _selectedCategory,
-                decoration: const InputDecoration(
+                style: TextStyle(
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                  fontSize: 16,
+                ),
+                dropdownColor: isDarkMode ? Colors.grey[800] : Colors.white,
+                decoration: InputDecoration(
                   labelText: 'Categoría',
-                  border: OutlineInputBorder(),
+                  labelStyle: TextStyle(
+                    color: isDarkMode ? Colors.white70 : Colors.black54,
+                    fontSize: 16,
+                  ),
+                  filled: true,
+                  fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[50],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: isDarkMode ? Colors.grey[600]! : Colors.grey[300]!,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: isDarkMode ? Colors.grey[600]! : Colors.grey[300]!,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: theme.primaryColor,
+                      width: 2,
+                    ),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 ),
                 items: _categories.map((category) {
                   return DropdownMenuItem(
                     value: category,
-                    child: Text(category),
+                    child: Text(
+                      category,
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white : Colors.black87,
+                      ),
+                    ),
                   );
                 }).toList(),
                 onChanged: (value) {
@@ -167,6 +215,7 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
               ),
               const SizedBox(height: 16),
               
+              // Descripción corta
               CustomTextField(
                 controller: _descriptionController,
                 label: 'Descripción corta',
@@ -184,7 +233,8 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
               ),
               const SizedBox(height: 16),
               
-              CustomTextField(
+              // Descripción completa
+              TextAreaField(
                 controller: _fullDescriptionController,
                 label: 'Descripción completa',
                 hintText: 'Describe detalladamente tu proyecto, problema que resuelve, solución, mercado objetivo, etc.',
@@ -208,12 +258,12 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: CustomTextField(
+                    child: NumberTextField(
                       controller: _fundingGoalController,
                       label: 'Meta de financiamiento',
                       hintText: '50000',
-                      keyboardType: TextInputType.number,
                       prefixText: '\$ ',
+                      min: 1000,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'La meta es obligatoria';
@@ -222,18 +272,23 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
                         if (amount == null || amount <= 0) {
                           return 'Ingresa un monto válido';
                         }
+                        if (amount < 1000) {
+                          return 'Mínimo \$1,000';
+                        }
                         return null;
                       },
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: CustomTextField(
+                    child: NumberTextField(
                       controller: _equityController,
                       label: 'Equity ofrecido',
                       hintText: '10',
-                      keyboardType: TextInputType.number,
                       suffixText: '%',
+                      min: 0,
+                      max: 100,
+                      decimals: 2,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'El equity es obligatorio';
@@ -270,6 +325,22 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
               ),
               const SizedBox(height: 24),
               
+              // SECCIÓN DE QUICK PITCH CON REPRODUCTOR Y GRABADOR
+              _buildSectionTitle('Quick Pitch (60 segundos)'),
+              const SizedBox(height: 8),
+              Text(
+                'Graba un pitch de 60 segundos para que los inversores conozcan tu proyecto de forma más personal',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Quick Pitch actual o grabador
+              _buildQuickPitchSection(),
+              const SizedBox(height: 24),
+              
               // Enlaces y contacto
               _buildSectionTitle('Enlaces y Contacto'),
               const SizedBox(height: 16),
@@ -279,6 +350,7 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
                 label: 'Sitio web (opcional)',
                 hintText: 'https://tuempresa.com',
                 keyboardType: TextInputType.url,
+                prefixIcon: const Icon(Icons.language),
               ),
               const SizedBox(height: 16),
               
@@ -287,14 +359,14 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
                 label: 'LinkedIn (opcional)',
                 hintText: 'https://linkedin.com/in/tuperfil',
                 keyboardType: TextInputType.url,
+                prefixIcon: const Icon(Icons.business),
               ),
               const SizedBox(height: 16),
               
-              CustomTextField(
+              EmailTextField(
                 controller: _contactEmailController,
                 label: 'Email de contacto',
                 hintText: 'contacto@tuempresa.com',
-                keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'El email es obligatorio';
@@ -307,11 +379,10 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
               ),
               const SizedBox(height: 16),
               
-              CustomTextField(
+              PhoneTextField(
                 controller: _contactPhoneController,
                 label: 'Teléfono de contacto',
                 hintText: '+52 123 456 7890',
-                keyboardType: TextInputType.phone,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'El teléfono es obligatorio';
@@ -348,6 +419,130 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
     );
   }
 
+  Widget _buildQuickPitchSection() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    
+    return Card(
+      color: isDarkMode ? Colors.grey[800] : null,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // Si hay Quick Pitch actual y no estamos grabando nuevo
+            if (_currentQuickPitchUrl != null && !_showRecorder) ...[
+              AudioPlayerWidget(
+                audioUrl: _currentQuickPitchUrl!,
+                title: 'Quick Pitch actual',
+              ),
+              const SizedBox(height: 16),
+              
+              // Botones para reemplazar o eliminar
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _showRecorder = true;
+                        });
+                      },
+                      icon: const Icon(Icons.mic),
+                      label: const Text('Grabar nuevo'),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _deleteCurrentQuickPitch,
+                      icon: const Icon(Icons.delete),
+                      label: const Text('Eliminar'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            
+            // Si no hay Quick Pitch o estamos grabando nuevo
+            if (_currentQuickPitchUrl == null || _showRecorder) ...[
+              // Mostrar botón cancelar si estamos reemplazando
+              if (_showRecorder && _currentQuickPitchUrl != null) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Grabando nuevo Quick Pitch',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _showRecorder = false;
+                          _newQuickPitchPath = null;
+                        });
+                      },
+                      icon: const Icon(Icons.cancel),
+                      label: const Text('Cancelar'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+              
+              // Widget de grabación
+              AudioRecorderWidget(
+                maxDuration: const Duration(seconds: 60),
+                onRecordingComplete: (path) {
+                  setState(() {
+                    _newQuickPitchPath = path;
+                  });
+                },
+                onRecordingDeleted: () {
+                  setState(() {
+                    _newQuickPitchPath = null;
+                  });
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _deleteCurrentQuickPitch() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Eliminar Quick Pitch?'),
+        content: const Text('Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _currentQuickPitchUrl = null;
+              });
+              Navigator.pop(context);
+              _showSuccessSnackBar('Quick Pitch eliminado');
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveProject() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -363,6 +558,28 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
     });
 
     try {
+      // Preparar metadata
+      Map<String, dynamic> metadata = Map.from(widget.project.metadata);
+      
+      // Manejar Quick Pitch
+      if (_newQuickPitchPath != null) {
+        // Subir nuevo Quick Pitch
+        final quickPitchUrl = await StorageService.uploadQuickPitchAudio(
+          'project_${widget.project.id}_${DateTime.now().millisecondsSinceEpoch}',
+          _newQuickPitchPath!,
+        );
+        
+        if (quickPitchUrl != null) {
+          metadata['quickPitchUrl'] = quickPitchUrl;
+        }
+      } else if (_currentQuickPitchUrl == null) {
+        // Eliminar Quick Pitch si se eliminó
+        metadata.remove('quickPitchUrl');
+      } else {
+        // Mantener Quick Pitch actual
+        metadata['quickPitchUrl'] = _currentQuickPitchUrl;
+      }
+
       final updates = {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -376,6 +593,7 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
         'linkedin': _linkedinController.text.trim(),
         'contactEmail': _contactEmailController.text.trim(),
         'contactPhone': _contactPhoneController.text.trim(),
+        'metadata': metadata,
       };
 
       final success = await context
@@ -384,7 +602,7 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
 
       if (success) {
         if (mounted) {
-          Navigator.pop(context, true); // Devolver true para indicar éxito
+          Navigator.pop(context, true);
           _showSuccessSnackBar('Proyecto actualizado exitosamente');
         }
       } else {

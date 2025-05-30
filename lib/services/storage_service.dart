@@ -1,9 +1,10 @@
 // Archivo: lib/services/storage_service.dart
-// Servicio para manejo de Firebase Storage
+// Servicio para manejo de Firebase Storage - VERSIÓN CORREGIDA
 
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter/foundation.dart';
 import '../config/firebase_config.dart';
 
 class StorageService {
@@ -36,7 +37,7 @@ class StorageService {
       
       return downloadUrl;
     } catch (e) {
-      print('Error al subir imagen de perfil: $e');
+      debugPrint('Error al subir imagen de perfil: $e');
       return null;
     }
   }
@@ -70,7 +71,7 @@ class StorageService {
       
       return downloadUrl;
     } catch (e) {
-      print('Error al subir imagen de proyecto: $e');
+      debugPrint('Error al subir imagen de proyecto: $e');
       return null;
     }
   }
@@ -109,31 +110,54 @@ class StorageService {
       
       return imageUrls;
     } catch (e) {
-      print('Error al subir imágenes de proyecto: $e');
+      debugPrint('Error al subir imágenes de proyecto: $e');
       return [];
     }
   }
   
-  // Subir audio de Quick Pitch
+  // 🔥 MÉTODO PRINCIPAL - Subir audio de Quick Pitch (RESTAURADO EXACTAMENTE COMO FUNCIONABA)
   static Future<String?> uploadQuickPitchAudio(
     String projectId,
     String audioPath,
   ) async {
     try {
-      // Crear referencia
+      debugPrint('🎵 StorageService.uploadQuickPitchAudio called:');
+      debugPrint('   - projectId: $projectId');
+      debugPrint('   - audioPath: $audioPath');
+      
+      // Validar que el path no esté vacío
+      if (audioPath.trim().isEmpty) {
+        debugPrint('❌ Audio path is empty');
+        return null;
+      }
+
+      final file = File(audioPath);
+      if (!await file.exists()) {
+        debugPrint('❌ Audio file does not exist at path: $audioPath');
+        return null;
+      }
+
+      // Crear referencia - USANDO LA ESTRUCTURA ORIGINAL QUE FUNCIONABA
       final ref = _storage.ref().child(
         '${FirebaseConfig.quickPitchAudioPath}/$projectId.m4a',
       );
       
-      // Subir archivo
+      debugPrint('🎵 Firebase Storage reference: ${ref.fullPath}');
+      
+      // Subir archivo - MANTENER CONFIGURACIÓN ORIGINAL
       final uploadTask = await ref.putFile(File(audioPath));
       
       // Obtener URL
       final downloadUrl = await uploadTask.ref.getDownloadURL();
       
+      debugPrint('✅ Quick Pitch uploaded successfully!');
+      debugPrint('   - Download URL: $downloadUrl');
+      debugPrint('   - File size: ${await file.length()} bytes');
+      
       return downloadUrl;
     } catch (e) {
-      print('Error al subir audio Quick Pitch: $e');
+      debugPrint('❌ Error uploading Quick Pitch: $e');
+      debugPrint('❌ Stack trace: ${StackTrace.current}');
       return null;
     }
   }
@@ -145,7 +169,7 @@ class StorageService {
       await ref.delete();
       return true;
     } catch (e) {
-      print('Error al eliminar archivo: $e');
+      debugPrint('Error al eliminar archivo: $e');
       return false;
     }
   }
@@ -156,7 +180,7 @@ class StorageService {
       final ref = _storage.refFromURL(fileUrl);
       return await ref.getMetadata();
     } catch (e) {
-      print('Error al obtener metadata: $e');
+      debugPrint('Error al obtener metadata: $e');
       return null;
     }
   }
@@ -197,7 +221,7 @@ class StorageService {
       
       return totalBytes;
     } catch (e) {
-      print('Error al calcular almacenamiento usado: $e');
+      debugPrint('Error al calcular almacenamiento usado: $e');
       return 0;
     }
   }

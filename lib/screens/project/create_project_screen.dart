@@ -1,5 +1,5 @@
 // Archivo: lib/screens/project/create_project_screen.dart
-// Pantalla para crear nuevo proyecto (solo emprendedores) - CORREGIDA
+// Pantalla para crear nuevo proyecto - VERSIÓN CORREGIDA QUE FUNCIONABA
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -97,9 +97,14 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     }
   }
 
-  // Crear proyecto
+  // 🔥 MÉTODO CORREGIDO - Crear proyecto con Quick Pitch funcional
   Future<void> _createProject() async {
-    if (!_formKey.currentState!.validate()) return;
+    debugPrint('🚀 === INICIANDO CREACIÓN DE PROYECTO ===');
+    
+    if (!_formKey.currentState!.validate()) {
+      debugPrint('❌ Formulario no válido');
+      return;
+    }
     
     setState(() {
       _isLoading = true;
@@ -109,28 +114,55 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     final projectProvider = context.read<ProjectProvider>();
     
     try {
-      // Subir audio si existe
+      // 🎵 PASO 1: Subir Quick Pitch si existe
       String? quickPitchUrl;
-      if (_quickPitchPath != null) {
+      if (_quickPitchPath != null && _quickPitchPath!.isNotEmpty) {
+        debugPrint('🎵 PASO 1: Subiendo Quick Pitch...');
+        debugPrint('   - Archivo local: $_quickPitchPath');
+        
+        // Generar ID único para el proyecto antes de subir
+        final tempProjectId = 'project_${DateTime.now().millisecondsSinceEpoch}';
+        debugPrint('   - ID temporal del proyecto: $tempProjectId');
+        
         quickPitchUrl = await StorageService.uploadQuickPitchAudio(
-          'project_${DateTime.now().millisecondsSinceEpoch}',
+          tempProjectId,
           _quickPitchPath!,
         );
+        
+        if (quickPitchUrl != null && quickPitchUrl.isNotEmpty) {
+          debugPrint('✅ Quick Pitch subido exitosamente: $quickPitchUrl');
+        } else {
+          debugPrint('❌ Error al subir Quick Pitch - URL vacía o nula');
+        }
+      } else {
+        debugPrint('⚠️ No hay Quick Pitch para subir');
       }
       
-      // Preparar metadata que incluye información del emprendedor
+      // 🔥 PASO 2: Preparar metadata EXACTAMENTE como funcionaba antes
       Map<String, dynamic> metadata = {};
-      if (quickPitchUrl != null) {
+      
+      // Agregar Quick Pitch URL si existe
+      if (quickPitchUrl != null && quickPitchUrl.isNotEmpty) {
         metadata['quickPitchUrl'] = quickPitchUrl;
+        debugPrint('✅ Quick Pitch agregado al metadata: $quickPitchUrl');
+      } else {
+        debugPrint('⚠️ No se agregó Quick Pitch al metadata');
       }
-      // Agregar nombre del emprendedor al metadata si está disponible
+      
+      // Agregar nombre del emprendedor
       if (authProvider.userModel?.name != null) {
         metadata['entrepreneurName'] = authProvider.userModel!.name;
+        debugPrint('✅ Nombre del emprendedor agregado: ${authProvider.userModel!.name}');
       }
       
-      // Crear el ProjectModel
+      debugPrint('🔍 METADATA FINAL PARA GUARDAR:');
+      metadata.forEach((key, value) {
+        debugPrint('   - $key: $value');
+      });
+      
+      // 🔥 PASO 3: Crear ProjectModel con metadata completo
       final project = ProjectModel(
-        id: '', // Se asignará automáticamente
+        id: '', // Se asignará automáticamente en Firestore
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         fullDescription: _fullDescriptionController.text.trim().isEmpty 
@@ -157,15 +189,22 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         isActive: true,
         interestedInvestors: 0,
         views: 0,
-        metadata: metadata,
+        metadata: metadata, // 🔥 METADATA CON QUICK PITCH
       );
       
-      // Crear proyecto usando el ProjectProvider actualizado
+      debugPrint('🔥 PASO 4: Enviando proyecto al provider...');
+      debugPrint('   - Metadata en el proyecto: ${project.metadata}');
+      
+      // 🔥 PASO 4: Crear proyecto usando ProjectProvider
       final projectId = await projectProvider.createProject(project);
       
       if (!mounted) return;
       
       if (projectId != null) {
+        debugPrint('✅ ¡PROYECTO CREADO EXITOSAMENTE!');
+        debugPrint('   - ID del proyecto: $projectId');
+        debugPrint('   - Quick Pitch incluido: ${quickPitchUrl != null}');
+        
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('¡Proyecto creado exitosamente!'),
@@ -174,6 +213,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         );
         Navigator.pop(context);
       } else {
+        debugPrint('❌ ERROR: No se pudo crear el proyecto');
+        debugPrint('   - Error del provider: ${projectProvider.error}');
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(projectProvider.error ?? 'Error al crear proyecto'),
@@ -182,6 +224,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         );
       }
     } catch (e) {
+      debugPrint('❌ EXCEPCIÓN AL CREAR PROYECTO: $e');
+      debugPrint('❌ Stack trace: ${StackTrace.current}');
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -191,6 +236,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         );
       }
     } finally {
+      debugPrint('🏁 Finalizando creación de proyecto...');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -528,7 +574,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
             ),
             const SizedBox(height: 16),
             
-            // Sección de Quick Pitch
+            // 🔥 SECCIÓN DE QUICK PITCH RESTAURADA
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -554,16 +600,53 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                       'conozcan tu proyecto de forma más personal',
                       style: TextStyle(fontSize: 14, color: Colors.grey),
                     ),
+                    
+                    // Indicador de estado del Quick Pitch
+                    if (_quickPitchPath != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors.green[700],
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Quick Pitch grabado: ${_quickPitchPath!.split('/').last}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    
                     const SizedBox(height: 16),
                     
+                    // Widget de grabación
                     AudioRecorderWidget(
                       maxDuration: const Duration(seconds: 60),
                       onRecordingComplete: (path) {
+                        debugPrint('🎤 Quick Pitch grabado completamente: $path');
                         setState(() {
                           _quickPitchPath = path;
                         });
                       },
                       onRecordingDeleted: () {
+                        debugPrint('🗑️ Quick Pitch eliminado');
                         setState(() {
                           _quickPitchPath = null;
                         });

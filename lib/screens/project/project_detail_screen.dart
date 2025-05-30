@@ -1,5 +1,5 @@
 // Archivo: lib/screens/project/project_detail_screen.dart
-// Pantalla de detalles del proyecto con Quick Pitch - ACTUALIZADA CON TIEMPO REAL
+// Pantalla de detalles del proyecto con Quick Pitch FUNCIONAL (versión restaurada)
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,11 +12,9 @@ import '../../widgets/project_status_chip.dart';
 import '../../widgets/user_rating_stars.dart';
 import '../../widgets/real_time_stats_widget.dart';
 import '../../services/audio_service.dart';
-import '../../services/fcm_service.dart';
 import '../profile/public_profile_screen.dart';
 import 'edit_project_screen.dart';
 import 'interested_investors_screen.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final ProjectModel project;
@@ -44,6 +42,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     super.initState();
     projectId = widget.project.id;
     _checkUserInterest();
+    
+    // Debug inicial del proyecto
+    debugPrint('🔍 === PROJECT DETAIL SCREEN INICIADO ===');
+    debugPrint('📋 Proyecto: ${widget.project.title}');
+    debugPrint('📋 ID: ${widget.project.id}');
+    debugPrint('📋 Metadata completo: ${widget.project.metadata}');
+    _debugQuickPitchInfo();
   }
 
   @override
@@ -55,9 +60,54 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     super.dispose();
   }
 
-  // Helper getters for missing properties
-  bool get _hasQuickPitch => _getQuickPitchUrl() != null;
-  String? _getQuickPitchUrl() => widget.project.metadata['quickPitchUrl'] as String?;
+  // 🔍 Método de debug para Quick Pitch
+  void _debugQuickPitchInfo() {
+    debugPrint('🔍 === ANALIZANDO QUICK PITCH ===');
+    debugPrint('📋 Metadata disponible:');
+    widget.project.metadata.forEach((key, value) {
+      debugPrint('   - $key: $value (${value.runtimeType})');
+    });
+    
+    final quickPitchUrl = _getQuickPitchUrl();
+    debugPrint('🎵 URL del Quick Pitch: $quickPitchUrl');
+    debugPrint('🎵 Tiene Quick Pitch: ${quickPitchUrl != null}');
+    debugPrint('🔍 === FIN ANÁLISIS ===');
+  }
+
+  // 🔥 HELPER GETTER CORREGIDO - Buscar Quick Pitch
+  bool get _hasQuickPitch {
+    final quickPitchUrl = _getQuickPitchUrl();
+    final hasQuickPitch = quickPitchUrl != null && quickPitchUrl.isNotEmpty;
+    
+    debugPrint('🔍 _hasQuickPitch getter:');
+    debugPrint('   - URL encontrada: $quickPitchUrl');
+    debugPrint('   - Tiene Quick Pitch: $hasQuickPitch');
+    
+    return hasQuickPitch;
+  }
+
+  // 🔥 MÉTODO CORREGIDO - Obtener URL del Quick Pitch
+  String? _getQuickPitchUrl() {
+    final metadata = widget.project.metadata;
+    
+    // Buscar con múltiples posibles claves por compatibilidad
+    final possibleKeys = ['quickPitchUrl', 'quick_pitch_url', 'quickPitch', 'audioUrl'];
+    
+    for (final key in possibleKeys) {
+      final url = metadata[key];
+      if (url != null && url is String && url.isNotEmpty) {
+        debugPrint('✅ Quick Pitch encontrado con clave "$key": $url');
+        return url;
+      }
+    }
+    
+    debugPrint('❌ No se encontró Quick Pitch URL en metadata');
+    debugPrint('📋 Claves buscadas: $possibleKeys');
+    debugPrint('📋 Metadata disponible: ${metadata.keys.toList()}');
+    
+    return null;
+  }
+
   String get _entrepreneurId => widget.project.createdBy;
   String get _entrepreneurName => widget.project.metadata['entrepreneurName'] as String? ?? 'Emprendedor';
 
@@ -83,25 +133,43 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         _isCheckingInterest = false;
       });
     } catch (e) {
-      print('Error checking interest: $e');
+      debugPrint('Error checking interest: $e');
       setState(() {
         _isCheckingInterest = false;
       });
     }
   }
 
-  // Reproducir Quick Pitch
+  // 🔥 MÉTODO CORREGIDO - Reproducir Quick Pitch
   Future<void> _toggleQuickPitch() async {
     final quickPitchUrl = _getQuickPitchUrl();
-    if (quickPitchUrl == null) return;
+    
+    debugPrint('🎵 === INTENTANDO REPRODUCIR QUICK PITCH ===');
+    debugPrint('🎵 URL: $quickPitchUrl');
+    debugPrint('🎵 Estado actual: ${_isPlayingPitch ? "reproduciendo" : "detenido"}');
+    
+    if (quickPitchUrl == null || quickPitchUrl.isEmpty) {
+      debugPrint('❌ No hay URL de Quick Pitch válida');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay Quick Pitch disponible para este proyecto'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     try {
       if (_isPlayingPitch) {
+        debugPrint('⏸️ Deteniendo reproducción de audio');
         await AudioService.stopAudio();
         setState(() {
           _isPlayingPitch = false;
         });
       } else {
+        debugPrint('▶️ Iniciando reproducción de audio');
+        debugPrint('🎵 URL completa: $quickPitchUrl');
+        
         setState(() {
           _isPlayingPitch = true;
         });
@@ -118,7 +186,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         });
       }
     } catch (e) {
-      print('Error playing audio: $e');
+      debugPrint('❌ Error playing audio: $e');
       setState(() {
         _isPlayingPitch = false;
       });
@@ -132,7 +200,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
-  // Expresar interés (para inversores) - ACTUALIZADO CON NUEVO PROVIDER
+  // Expresar interés (para inversores)
   Future<void> _expressInterest() async {
     final authProvider = context.read<AuthProvider>();
     final projectProvider = context.read<ProjectProvider>();
@@ -390,7 +458,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                 ),
                               ),
                               errorWidget: (_, error, stackTrace) {
-                                print('Error loading image: $error');
+                                debugPrint('Error loading image: $error');
                                 return Container(
                                   color: Colors.grey[300],
                                   child: const Column(
@@ -522,7 +590,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       ),
                       const SizedBox(height: 16),
                       
-                      // Quick Pitch
+                      // 🔥 SECCIÓN DE QUICK PITCH RESTAURADA
                       if (_hasQuickPitch)
                         _buildQuickPitchSection(project),
                       
@@ -666,8 +734,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
-  // Sección de Quick Pitch
+  // 🔥 SECCIÓN DE QUICK PITCH RESTAURADA (EXACTAMENTE COMO FUNCIONABA)
   Widget _buildQuickPitchSection(ProjectModel project) {
+    final quickPitchUrl = _getQuickPitchUrl();
+    
+    debugPrint('🎵 Building Quick Pitch section:');
+    debugPrint('   - URL: $quickPitchUrl');
+    debugPrint('   - Project ID: ${project.id}');
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -718,7 +792,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
           const SizedBox(height: 12),
           
-          // Botón de reproducir
+          // Botón de reproducir (TU IMPLEMENTACIÓN ORIGINAL)
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -923,64 +997,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Widget auxiliar para estadísticas - MANTENER PARA COMPATIBILIDAD
-class _StatItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _StatItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            color: Theme.of(context).primaryColor,
-            size: 24,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

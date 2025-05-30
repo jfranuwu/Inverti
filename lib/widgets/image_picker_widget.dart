@@ -1,17 +1,18 @@
 // Archivo: lib/widgets/image_picker_widget.dart
-// Widget para seleccionar y gestionar imágenes
+// Widget para seleccionar y gestionar imágenes del proyecto
 
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../services/storage_service.dart';
 
 class ImagePickerWidget extends StatefulWidget {
   final String? initialImageUrl;
   final List<String> initialImages;
-  final Function(String?) onMainImageSelected;
+  final Function(String) onMainImageSelected;
   final Function(List<String>) onImagesSelected;
   final int maxImages;
-  final bool showMainImageSelector;
+  final bool allowMainImageSelection;
 
   const ImagePickerWidget({
     super.key,
@@ -19,8 +20,8 @@ class ImagePickerWidget extends StatefulWidget {
     this.initialImages = const [],
     required this.onMainImageSelected,
     required this.onImagesSelected,
-    this.maxImages = 5,
-    this.showMainImageSelector = true,
+    this.maxImages = 3,
+    this.allowMainImageSelection = true,
   });
 
   @override
@@ -28,379 +29,264 @@ class ImagePickerWidget extends StatefulWidget {
 }
 
 class _ImagePickerWidgetState extends State<ImagePickerWidget> {
-  final ImagePicker _imagePicker = ImagePicker();
+  late List<String> _selectedImages;
   String? _mainImageUrl;
-  List<String> _additionalImages = [];
   bool _isUploading = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
+    _selectedImages = List.from(widget.initialImages);
     _mainImageUrl = widget.initialImageUrl;
-    _additionalImages = List.from(widget.initialImages);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (widget.showMainImageSelector) ...[
-          Text(
-            'Imagen principal *',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildMainImageSelector(),
-          const SizedBox(height: 24),
-        ],
-        
-        Text(
-          'Imágenes adicionales (${_additionalImages.length}/${widget.maxImages})',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        _buildAdditionalImagesGrid(),
-        
-        if (_isUploading) ...[
-          const SizedBox(height: 16),
-          const Center(
-            child: CircularProgressIndicator(),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildMainImageSelector() {
-    return Container(
-      height: 200,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: _mainImageUrl != null
-          ? _buildImagePreview(_mainImageUrl!, isMain: true)
-          : _buildImagePlaceholder(isMain: true),
-    );
-  }
-
-  Widget _buildAdditionalImagesGrid() {
-    return SizedBox(
-      height: 120,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _additionalImages.length + 1,
-        itemBuilder: (context, index) {
-          if (index == _additionalImages.length) {
-            // Botón para agregar nueva imagen
-            return _buildAddImageButton();
-          }
-          
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: _buildImagePreview(
-              _additionalImages[index],
-              isMain: false,
-              onRemove: () => _removeAdditionalImage(index),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildImagePreview(
-    String imageUrl, {
-    required bool isMain,
-    VoidCallback? onRemove,
-  }) {
-    return Container(
-      width: isMain ? double.infinity : 120,
-      height: isMain ? 200 : 120,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: Stack(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: _buildImage(imageUrl),
-          ),
-          
-          // Botón de eliminar
-          Positioned(
-            top: 8,
-            right: 8,
-            child: GestureDetector(
-              onTap: isMain ? _removeMainImage : onRemove,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.close,
-                  color: Colors.white,
-                  size: 16,
-                ),
-              ),
-            ),
-          ),
-          
-          // Botón de cambiar (solo para imagen principal)
-          if (isMain)
-            Positioned(
-              bottom: 8,
-              right: 8,
-              child: GestureDetector(
-                onTap: () => _pickImage(isMain: true),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.camera_alt,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'Cambiar',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildImage(String imageUrl) {
-    // Si es una URL de red
-    if (imageUrl.startsWith('http')) {
-      return Image.network(
-        imageUrl,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildErrorPlaceholder();
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return _buildLoadingPlaceholder();
-        },
-      );
+  Future<void> _pickImages() async {
+    if (_isUploading) return;
+    
+    final remainingSlots = widget.maxImages - _selectedImages.length;
+    if (remainingSlots <= 0) {
+      _showSnackBar('Máximo ${widget.maxImages} imágenes permitidas', Colors.orange);
+      return;
     }
-    
-    // Si es una ruta de archivo local
-    return Image.file(
-      File(imageUrl),
-      width: double.infinity,
-      height: double.infinity,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
-        return _buildErrorPlaceholder();
-      },
-    );
-  }
 
-  Widget _buildImagePlaceholder({required bool isMain}) {
-    return GestureDetector(
-      onTap: () => _pickImage(isMain: isMain),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.grey[300]!,
-            style: BorderStyle.solid,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.add_photo_alternate,
-              size: isMain ? 48 : 32,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isMain ? 'Agregar imagen principal' : 'Agregar imagen',
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: isMain ? 16 : 12,
-              ),
-            ),
-            if (isMain) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Toca para seleccionar',
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAddImageButton() {
-    final canAddMore = _additionalImages.length < widget.maxImages;
-    
-    return GestureDetector(
-      onTap: canAddMore ? () => _pickImage(isMain: false) : null,
-      child: Container(
-        width: 120,
-        height: 120,
-        decoration: BoxDecoration(
-          color: canAddMore ? Colors.grey[50] : Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: canAddMore ? Colors.grey[300]! : Colors.grey[400]!,
-            style: BorderStyle.solid,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.add,
-              size: 32,
-              color: canAddMore ? Colors.grey[600] : Colors.grey[500],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              canAddMore ? 'Agregar' : 'Máximo ${widget.maxImages}',
-              style: TextStyle(
-                color: canAddMore ? Colors.grey[600] : Colors.grey[500],
-                fontSize: 12,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingPlaceholder() {
-    return Container(
-      color: Colors.grey[100],
-      child: const Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
-  }
-
-  Widget _buildErrorPlaceholder() {
-    return Container(
-      color: Colors.grey[100],
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.error_outline,
-            color: Colors.grey[400],
-            size: 32,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Error al cargar imagen',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickImage({required bool isMain}) async {
     try {
-      final source = await _showImageSourceDialog();
-      if (source == null) return;
+      final List<XFile> pickedFiles = await _picker.pickMultiImage(
+        imageQuality: 80,
+      );
+
+      if (pickedFiles.isEmpty) return;
+
+      // Limitar la cantidad de imágenes seleccionadas
+      final imagesToUpload = pickedFiles.take(remainingSlots).toList();
+      
+      if (pickedFiles.length > remainingSlots) {
+        _showSnackBar(
+          'Solo se seleccionaron $remainingSlots imágenes de ${pickedFiles.length}',
+          Colors.orange,
+        );
+      }
 
       setState(() {
         _isUploading = true;
       });
 
-      final XFile? pickedFile = await _imagePicker.pickImage(
-        source: source,
-        maxWidth: 1920,
-        maxHeight: 1080,
-        imageQuality: 85,
+      // Subir imágenes
+      final uploadedUrls = await _uploadImages(imagesToUpload);
+      
+      setState(() {
+        _selectedImages.addAll(uploadedUrls);
+        _isUploading = false;
+      });
+
+      // Si no hay imagen principal y se subió al menos una imagen
+      if (_mainImageUrl == null && uploadedUrls.isNotEmpty) {
+        _mainImageUrl = uploadedUrls.first;
+        widget.onMainImageSelected(_mainImageUrl!);
+      }
+
+      widget.onImagesSelected(_selectedImages);
+      
+      _showSnackBar(
+        'Imágenes subidas exitosamente',
+        Colors.green,
       );
 
-      if (pickedFile != null) {
-        // En una implementación real, aquí subirías la imagen a Firebase Storage
-        // Por ahora usamos la ruta local
-        final imageUrl = await _uploadImageToStorage(pickedFile.path);
-        
-        if (isMain) {
-          setState(() {
-            _mainImageUrl = imageUrl;
-          });
-          widget.onMainImageSelected(imageUrl);
-        } else {
-          if (_additionalImages.length < widget.maxImages) {
-            setState(() {
-              _additionalImages.add(imageUrl);
-            });
-            widget.onImagesSelected(_additionalImages);
-          }
-        }
-      }
     } catch (e) {
-      _showErrorSnackBar('Error al seleccionar imagen: $e');
-    } finally {
       setState(() {
         _isUploading = false;
       });
+      _showSnackBar('Error al seleccionar imágenes: $e', Colors.red);
     }
   }
 
-  Future<ImageSource?> _showImageSourceDialog() async {
-    return showDialog<ImageSource>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Seleccionar imagen'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+  
+Future<List<String>> _uploadImages(List<XFile> imageFiles) async {
+  final List<String> uploadedUrls = [];
+  
+  for (int i = 0; i < imageFiles.length; i++) {
+    try {
+      // Verificar que el path no sea null y no esté vacío
+      final imagePath = imageFiles[i].path;
+      if (imagePath.trim().isEmpty) {
+        debugPrint('Error: Image path is empty for image $i');
+        continue;
+      }
+      
+      final String? url = await StorageService.uploadProjectImage(
+        'project_${DateTime.now().millisecondsSinceEpoch}_$i',
+        imagePath,
+      );
+      
+      // Verificar que la URL no sea null ni vacía antes de agregarla
+      if (url != null && url.isNotEmpty) {
+        uploadedUrls.add(url);
+      } else {
+        debugPrint('Error: Upload returned null or empty URL for image $i');
+      }
+    } catch (e) {
+      debugPrint('Error uploading image $i: $e');
+    }
+  }
+  
+  return uploadedUrls;
+}
+
+  void _removeImage(int index) {
+    setState(() {
+      final removedImage = _selectedImages[index];
+      _selectedImages.removeAt(index);
+      
+      // Si la imagen removida era la principal, seleccionar la primera disponible
+      if (_mainImageUrl == removedImage) {
+        _mainImageUrl = _selectedImages.isNotEmpty ? _selectedImages.first : null;
+        if (_mainImageUrl != null) {
+          widget.onMainImageSelected(_mainImageUrl!);
+        }
+      }
+    });
+    
+    widget.onImagesSelected(_selectedImages);
+  }
+
+  void _setAsMainImage(String imageUrl) {
+    if (!widget.allowMainImageSelection) return;
+    
+    setState(() {
+      _mainImageUrl = imageUrl;
+    });
+    widget.onMainImageSelected(imageUrl);
+  }
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header con botón de agregar
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera),
-              title: const Text('Cámara'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
+            Text(
+              'Imágenes del proyecto',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Galería'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            TextButton.icon(
+              onPressed: _selectedImages.length >= widget.maxImages || _isUploading
+                  ? null
+                  : _pickImages,
+              icon: _isUploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_photo_alternate),
+              label: Text(_isUploading ? 'Subiendo...' : 'Agregar'),
+            ),
+          ],
+        ),
+        
+        // Información sobre límites
+        Text(
+          'Máximo ${widget.maxImages} imágenes (${_selectedImages.length}/${widget.maxImages})',
+          style: TextStyle(
+            fontSize: 12,
+            color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+          ),
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // Imagen principal
+        if (widget.allowMainImageSelection && _mainImageUrl != null) ...[
+          Text(
+            'Imagen principal',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildMainImageCard(),
+          const SizedBox(height: 16),
+        ],
+        
+        // Grid de imágenes
+        if (_selectedImages.isEmpty)
+          _buildEmptyState(isDarkMode)
+        else
+          _buildImageGrid(),
+      ],
+    );
+  }
+
+  Widget _buildMainImageCard() {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    
+    return Container(
+      height: 120,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: theme.primaryColor,
+          width: 2,
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Stack(
+          children: [
+            CachedNetworkImage(
+              imageUrl: _mainImageUrl!,
+              width: double.infinity,
+              height: double.infinity,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
+                child: const Icon(Icons.error),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.primaryColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Principal',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -408,40 +294,192 @@ class _ImagePickerWidgetState extends State<ImagePickerWidget> {
     );
   }
 
-  Future<String> _uploadImageToStorage(String filePath) async {
-    // TODO: Implementar subida real a Firebase Storage
-    // Por ahora retornamos la ruta local para testing
-    await Future.delayed(const Duration(seconds: 1)); // Simular subida
+  Widget _buildEmptyState(bool isDarkMode) {
+    return Container(
+      height: 120,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: isDarkMode ? Colors.grey[600]! : Colors.grey[300]!,
+          style: BorderStyle.solid,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        color: isDarkMode ? Colors.grey[900] : Colors.grey[50],
+      ),
+      child: InkWell(
+        onTap: _isUploading ? null : _pickImages,
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_photo_alternate,
+              size: 32,
+              color: isDarkMode ? Colors.grey[500] : Colors.grey[400],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Toca para agregar imágenes',
+              style: TextStyle(
+                color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+            Text(
+              'Máximo ${widget.maxImages} imágenes',
+              style: TextStyle(
+                color: isDarkMode ? Colors.grey[500] : Colors.grey[500],
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageGrid() {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemCount: _selectedImages.length,
+      itemBuilder: (context, index) {
+        return _buildImageCard(_selectedImages[index], index);
+      },
+    );
+  }
+
+  Widget _buildImageCard(String imageUrl, int index) {
+    final theme = Theme.of(context);
+    final isMainImage = _mainImageUrl == imageUrl;
     
-    // En producción sería algo como:
-    // final ref = FirebaseStorage.instance.ref().child('images/${DateTime.now().millisecondsSinceEpoch}');
-    // final uploadTask = ref.putFile(File(filePath));
-    // final snapshot = await uploadTask;
-    // return await snapshot.ref.getDownloadURL();
-    
-    return filePath; // Temporal para testing
-  }
-
-  void _removeMainImage() {
-    setState(() {
-      _mainImageUrl = null;
-    });
-    widget.onMainImageSelected(null);
-  }
-
-  void _removeAdditionalImage(int index) {
-    setState(() {
-      _additionalImages.removeAt(index);
-    });
-    widget.onImagesSelected(_additionalImages);
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: isMainImage ? theme.primaryColor : Colors.grey[300]!,
+          width: isMainImage ? 2 : 1,
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Stack(
+          children: [
+            // Imagen
+            CachedNetworkImage(
+              imageUrl: imageUrl,
+              width: double.infinity,
+              height: double.infinity,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                color: Colors.grey[200],
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                color: Colors.grey[200],
+                child: const Icon(Icons.error),
+              ),
+            ),
+            
+            // Overlay con botones
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.7),
+                    ],
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Botón eliminar
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 24,
+                            minHeight: 24,
+                          ),
+                          onPressed: () => _removeImage(index),
+                        ),
+                      ],
+                    ),
+                    
+                    // Botón marcar como principal
+                    if (widget.allowMainImageSelection)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (!isMainImage)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.star_border,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 24,
+                                minHeight: 24,
+                              ),
+                              onPressed: () => _setAsMainImage(imageUrl),
+                            )
+                          else
+                            const Icon(
+                              Icons.star,
+                              color: Colors.amber,
+                              size: 16,
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // Badge de principal
+            if (isMainImage)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.primaryColor,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Principal',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

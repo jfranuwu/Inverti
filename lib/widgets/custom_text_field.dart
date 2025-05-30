@@ -1,5 +1,5 @@
 // Archivo: lib/widgets/custom_text_field.dart
-// Widget de campo de texto personalizado reutilizable
+// Widget de campo de texto personalizado con soporte completo para modo oscuro
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -133,6 +133,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
 
   InputDecoration _buildInputDecoration(BuildContext context) {
     final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final borderRadius = widget.borderRadius ?? BorderRadius.circular(12);
     
     return InputDecoration(
@@ -141,26 +142,35 @@ class _CustomTextFieldState extends State<CustomTextField> {
       prefixText: widget.prefixText,
       suffixText: widget.suffixText,
       prefixIcon: widget.prefixIcon,
-      suffixIcon: _buildSuffixIcon(),
+      suffixIcon: _buildSuffixIcon(context),
       filled: widget.filled,
       fillColor: widget.fillColor ?? _getDefaultFillColor(context),
       contentPadding: widget.contentPadding ?? _getDefaultContentPadding(),
       
-      // Estilos de texto
+      // Estilos de texto - CORREGIDO PARA MODO OSCURO
       labelStyle: widget.labelStyle ?? _getDefaultLabelStyle(context),
       hintStyle: widget.hintStyle ?? _getDefaultHintStyle(context),
       
-      // Bordes
+      // Color de los iconos - CORREGIDO PARA MODO OSCURO
+      prefixIconColor: isDarkMode ? Colors.white70 : Colors.black54,
+      suffixIconColor: isDarkMode ? Colors.white70 : Colors.black54,
+      
+      // Contador de caracteres - CORREGIDO PARA MODO OSCURO
+      counterStyle: TextStyle(
+        color: isDarkMode ? Colors.white60 : Colors.black54,
+      ),
+      
+      // Bordes del campo - CORREGIDO PARA MODO OSCURO
       border: OutlineInputBorder(
         borderRadius: borderRadius,
         borderSide: BorderSide(
-          color: widget.borderColor ?? theme.dividerColor,
+          color: widget.borderColor ?? (isDarkMode ? Colors.grey[600]! : Colors.grey[300]!),
         ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: borderRadius,
         borderSide: BorderSide(
-          color: widget.borderColor ?? theme.dividerColor,
+          color: widget.borderColor ?? (isDarkMode ? Colors.grey[600]! : Colors.grey[300]!),
         ),
       ),
       focusedBorder: OutlineInputBorder(
@@ -186,18 +196,26 @@ class _CustomTextFieldState extends State<CustomTextField> {
       disabledBorder: OutlineInputBorder(
         borderRadius: borderRadius,
         borderSide: BorderSide(
-          color: theme.dividerColor.withOpacity(0.5),
+          color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
         ),
+      ),
+      
+      // Color del texto de error
+      errorStyle: const TextStyle(
+        color: Colors.red,
+        fontSize: 12,
       ),
     );
   }
 
-  Widget? _buildSuffixIcon() {
+  Widget? _buildSuffixIcon(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     if (widget.obscureText) {
       return IconButton(
         icon: Icon(
           _obscureText ? Icons.visibility : Icons.visibility_off,
-          color: Colors.grey[600],
+          color: isDarkMode ? Colors.white60 : Colors.grey[600],
         ),
         onPressed: () {
           setState(() {
@@ -218,26 +236,35 @@ class _CustomTextFieldState extends State<CustomTextField> {
     return null; // Ocultar contador por defecto
   }
 
-  // Estilos por defecto
+  // Estilos por defecto - CORREGIDOS PARA MODO OSCURO
   TextStyle _getDefaultTextStyle(BuildContext context) {
-    return Theme.of(context).textTheme.bodyLarge ?? const TextStyle();
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return TextStyle(
+      color: isDarkMode ? Colors.white : Colors.black87,
+      fontSize: 16,
+    );
   }
 
   TextStyle _getDefaultLabelStyle(BuildContext context) {
-    return Theme.of(context).textTheme.bodyMedium?.copyWith(
-      color: Colors.grey[700],
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return TextStyle(
+      color: isDarkMode ? Colors.white70 : Colors.black54,
+      fontSize: 16,
       fontWeight: FontWeight.w500,
-    ) ?? const TextStyle();
+    );
   }
 
   TextStyle _getDefaultHintStyle(BuildContext context) {
-    return Theme.of(context).textTheme.bodyMedium?.copyWith(
-      color: Colors.grey[500],
-    ) ?? const TextStyle();
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return TextStyle(
+      color: isDarkMode ? Colors.white38 : Colors.black38,
+      fontSize: 16,
+    );
   }
 
   Color _getDefaultFillColor(BuildContext context) {
-    return Colors.grey[50] ?? const Color(0xFFF5F5F5);
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return isDarkMode ? Colors.grey[800]! : Colors.grey[50]!;
   }
 
   EdgeInsetsGeometry _getDefaultContentPadding() {
