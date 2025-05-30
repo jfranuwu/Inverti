@@ -1,5 +1,5 @@
 // Archivo: lib/screens/project/project_detail_screen.dart
-// Pantalla de detalles del proyecto con Quick Pitch FUNCIONAL (versión restaurada)
+// Pantalla de detalles del proyecto con Quick Pitch FUNCIONAL y CARRUSEL CORREGIDO
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -47,6 +47,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     debugPrint('🔍 === PROJECT DETAIL SCREEN INICIADO ===');
     debugPrint('📋 Proyecto: ${widget.project.title}');
     debugPrint('📋 ID: ${widget.project.id}');
+    debugPrint('🖼️ Número de imágenes: ${widget.project.images.length}');
+    debugPrint('🖼️ URLs de imágenes: ${widget.project.images}');
     debugPrint('📋 Metadata completo: ${widget.project.metadata}');
     _debugQuickPitchInfo();
   }
@@ -393,7 +395,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
           return CustomScrollView(
             slivers: [
-              // App bar con imagen y menú de opciones
+              // 🔥 APP BAR CON CARRUSEL DE IMÁGENES CORREGIDO
               SliverAppBar(
                 expandedHeight: 250,
                 pinned: true,
@@ -434,103 +436,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ],
                 ],
                 flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Carousel de imágenes
-                      if (project.images.isNotEmpty)
-                        PageView.builder(
-                          controller: _imageController,
-                          onPageChanged: (index) {
-                            setState(() {
-                              _currentImageIndex = index;
-                            });
-                          },
-                          itemCount: project.images.length,
-                          itemBuilder: (context, index) {
-                            return CachedNetworkImage(
-                              imageUrl: project.images[index],
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) => Container(
-                                color: Colors.grey[300],
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-                              errorWidget: (_, error, stackTrace) {
-                                debugPrint('Error loading image: $error');
-                                return Container(
-                                  color: Colors.grey[300],
-                                  child: const Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.error_outline,
-                                        size: 60,
-                                        color: Colors.grey,
-                                      ),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        'Error al cargar imagen',
-                                        style: TextStyle(color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        )
-                      else
-                        Container(
-                          color: Colors.grey[300],
-                          child: const Icon(
-                            Icons.business,
-                            size: 80,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      
-                      // Gradiente oscuro
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.7),
-                            ],
-                          ),
-                        ),
-                      ),
-                      
-                      // Indicadores de página
-                      if (project.images.length > 1)
-                        Positioned(
-                          bottom: 16,
-                          left: 0,
-                          right: 0,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(
-                              project.images.length,
-                              (index) => Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: _currentImageIndex == index
-                                      ? Colors.white
-                                      : Colors.white.withOpacity(0.5),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                  background: _buildImageCarousel(project),
                 ),
               ),
               
@@ -730,6 +636,259 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  // 🔥 CARRUSEL DE IMÁGENES CORREGIDO
+  Widget _buildImageCarousel(ProjectModel project) {
+    debugPrint('🖼️ Construyendo carrusel con ${project.images.length} imágenes');
+    
+    if (project.images.isEmpty) {
+      return Container(
+        color: Colors.grey[300],
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.business,
+                size: 80,
+                color: Colors.grey,
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Sin imágenes',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 🔥 PAGEVIEW MEJORADO PARA CARRUSEL
+        PageView.builder(
+          controller: _imageController,
+          physics: const BouncingScrollPhysics(), // Mejores físicas de scroll
+          onPageChanged: (index) {
+            debugPrint('🖼️ Cambiando a imagen $index de ${project.images.length}');
+            setState(() {
+              _currentImageIndex = index;
+            });
+          },
+          itemCount: project.images.length,
+          itemBuilder: (context, index) {
+            final imageUrl = project.images[index];
+            debugPrint('🖼️ Cargando imagen $index: $imageUrl');
+            
+            return GestureDetector(
+              onTap: () {
+                // Mostrar imagen en pantalla completa al tocar
+                _showFullScreenImage(project.images, index);
+              },
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: Colors.grey[300],
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 8),
+                        Text(
+                          'Cargando imagen...',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                errorWidget: (context, url, error) {
+                  debugPrint('❌ Error cargando imagen: $url - Error: $error');
+                  return Container(
+                    color: Colors.grey[300],
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 60,
+                          color: Colors.grey,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Error al cargar imagen',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        
+        // Gradiente oscuro para mejor legibilidad
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.black.withOpacity(0.7),
+              ],
+            ),
+          ),
+        ),
+        
+        // 🔥 INDICADORES DE PÁGINA MEJORADOS
+        if (project.images.length > 1)
+          Positioned(
+            bottom: 20,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(
+                      project.images.length,
+                      (index) => AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: _currentImageIndex == index ? 24 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _currentImageIndex == index
+                              ? Colors.white
+                              : Colors.white.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        
+        // 🔥 CONTADOR DE IMÁGENES
+        if (project.images.length > 1)
+          Positioned(
+            top: 40,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_currentImageIndex + 1}/${project.images.length}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        
+        // 🔥 BOTONES DE NAVEGACIÓN PARA DESKTOP/TABLET
+        if (project.images.length > 1) ...[
+          // Botón anterior
+          Positioned(
+            left: 16,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: IconButton(
+                  onPressed: () {
+                    if (_currentImageIndex > 0) {
+                      _imageController.animateToPage(
+                        _currentImageIndex - 1,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  },
+                  icon: const Icon(
+                    Icons.chevron_left,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // Botón siguiente
+          Positioned(
+            right: 16,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: IconButton(
+                  onPressed: () {
+                    if (_currentImageIndex < project.images.length - 1) {
+                      _imageController.animateToPage(
+                        _currentImageIndex + 1,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  },
+                  icon: const Icon(
+                    Icons.chevron_right,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // 🔥 MÉTODO PARA MOSTRAR IMAGEN EN PANTALLA COMPLETA
+  void _showFullScreenImage(List<String> images, int initialIndex) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _FullScreenImageViewer(
+          images: images,
+          initialIndex: initialIndex,
+        ),
       ),
     );
   }
@@ -1002,6 +1161,88 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// 🔥 VISOR DE IMÁGENES EN PANTALLA COMPLETA
+class _FullScreenImageViewer extends StatefulWidget {
+  final List<String> images;
+  final int initialIndex;
+
+  const _FullScreenImageViewer({
+    required this.images,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_FullScreenImageViewer> createState() => _FullScreenImageViewerState();
+}
+
+class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
+  late PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          '${_currentIndex + 1} de ${widget.images.length}',
+          style: const TextStyle(color: Colors.white),
+        ),
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        itemCount: widget.images.length,
+        itemBuilder: (context, index) {
+          return InteractiveViewer(
+            minScale: 0.1,
+            maxScale: 3.0,
+            child: Center(
+              child: CachedNetworkImage(
+                imageUrl: widget.images[index],
+                fit: BoxFit.contain,
+                placeholder: (context, url) => const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+                errorWidget: (context, url, error) => const Center(
+                  child: Icon(
+                    Icons.error_outline,
+                    color: Colors.white,
+                    size: 60,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
