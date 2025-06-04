@@ -1,5 +1,5 @@
-// Archivo: lib/services/notification_service.dart
-// Servicio de notificaciones - CON LIMPIEZA EN LOGOUT
+// File: lib/services/notification_service.dart
+// Servicio de notificaciones con soporte para mensajes de chat - CORREGIDO
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -83,7 +83,7 @@ class NotificationService {
     debugPrint('🔇 Listener de notificaciones detenido');
   }
 
-  // NUEVO: Limpiar en logout
+  // Limpiar en logout
   Future<void> clearOnLogout() async {
     try {
       debugPrint('🧹 Limpiando NotificationService en logout...');
@@ -108,7 +108,7 @@ class NotificationService {
     }
   }
 
-  // NUEVO: Reinicializar después del logout
+  // Reinicializar después del logout
   Future<void> reinitializeAfterLogout() async {
     try {
       if (_notificationsController == null) {
@@ -128,6 +128,61 @@ class NotificationService {
       return true;
     } catch (e) {
       debugPrint('❌ Error creando notificación: $e');
+      return false;
+    }
+  }
+
+  // Crear notificación específica de mensaje de chat
+  Future<bool> createChatNotification({
+    required String receiverId,
+    required String senderName,
+    required String messageContent,
+    required String chatId,
+    String? projectTitle,
+  }) async {
+    try {
+      debugPrint('💬 Creando notificación de mensaje de chat...');
+      
+      // Truncar mensaje si es muy largo para el historial
+      String displayMessage = messageContent;
+      if (displayMessage.length > 100) {
+        displayMessage = '${displayMessage.substring(0, 97)}...';
+      }
+      
+      // Agregar contexto del proyecto si existe
+      String title = '💬 Mensaje de $senderName';
+      if (projectTitle != null && projectTitle.isNotEmpty) {
+        title = '💬 $senderName - $projectTitle';
+      }
+
+      final notification = NotificationModel(
+        id: '',
+        userId: receiverId,
+        title: title,
+        message: displayMessage,
+        type: 'message',
+        isRead: false,
+        createdAt: DateTime.now(),
+        priority: NotificationPriority.medium,
+        data: {
+          'type': 'chat_message',
+          'chatId': chatId,
+          'senderName': senderName,
+          'projectTitle': projectTitle ?? '',
+          'messageContent': messageContent,
+          'clickAction': 'OPEN_CHAT',
+        },
+      );
+
+      final success = await createNotification(notification);
+      
+      if (success) {
+        debugPrint('✅ Notificación de chat creada exitosamente');
+      }
+      
+      return success;
+    } catch (e) {
+      debugPrint('❌ Error creando notificación de chat: $e');
       return false;
     }
   }
@@ -174,6 +229,69 @@ class NotificationService {
       return true;
     } catch (e) {
       debugPrint('❌ Error marcando todas como leídas: $e');
+      return false;
+    }
+  }
+
+  // Marcar todas las notificaciones de chat como leídas
+  Future<bool> markAllChatNotificationsAsRead(String userId) async {
+    try {
+      final batch = _firestore.batch();
+      
+      final unreadChatNotifications = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .where('type', isEqualTo: 'message')
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      for (final doc in unreadChatNotifications.docs) {
+        batch.update(doc.reference, {
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      debugPrint('✅ Todas las notificaciones de chat marcadas como leídas');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error marcando notificaciones de chat como leídas: $e');
+      return false;
+    }
+  }
+
+  // Marcar notificaciones de un chat específico como leídas
+  Future<bool> markChatNotificationsAsRead(String userId, String chatId) async {
+    try {
+      final batch = _firestore.batch();
+      
+      final chatNotifications = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .where('type', isEqualTo: 'message')
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      // Filtrar por chatId en los datos
+      final notificationsToUpdate = chatNotifications.docs.where((doc) {
+        final data = doc.data();
+        final notificationData = data['data'] as Map<String, dynamic>?;
+        return notificationData?['chatId'] == chatId;
+      });
+
+      for (final doc in notificationsToUpdate) {
+        batch.update(doc.reference, {
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      debugPrint('✅ Notificaciones del chat $chatId marcadas como leídas');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error marcando notificaciones del chat como leídas: $e');
       return false;
     }
   }
@@ -226,11 +344,28 @@ class NotificationService {
         .toList();
   }
 
+  // Obtener notificaciones de chat
+  List<NotificationModel> getChatNotifications() {
+    return getNotificationsByType('message');
+  }
+
   // Obtener notificaciones no leídas
   List<NotificationModel> getUnreadNotifications() {
     return _notifications
         .where((notification) => !notification.isRead)
         .toList();
+  }
+
+  // Obtener notificaciones no leídas de chat
+  List<NotificationModel> getUnreadChatNotifications() {
+    return _notifications
+        .where((notification) => notification.type == 'message' && !notification.isRead)
+        .toList();
+  }
+
+  // Obtener contador de notificaciones no leídas de chat
+  int getUnreadChatNotificationsCount() {
+    return getUnreadChatNotifications().length;
   }
 
   // Crear notificación de interés de inversor
@@ -250,6 +385,7 @@ class NotificationService {
         type: 'investor_interest',
         isRead: false,
         createdAt: DateTime.now(),
+        priority: NotificationPriority.high,
         data: {
           'projectId': projectId,
           'projectTitle': projectTitle,
@@ -283,6 +419,7 @@ class NotificationService {
         type: 'project_funded',
         isRead: false,
         createdAt: DateTime.now(),
+        priority: NotificationPriority.high,
         data: {
           'projectId': projectId,
           'projectTitle': projectTitle,
@@ -305,6 +442,7 @@ class NotificationService {
     required String title,
     required String message,
     String type = 'general',
+    NotificationPriority priority = NotificationPriority.medium,
     Map<String, dynamic>? data,
   }) async {
     try {
@@ -316,6 +454,7 @@ class NotificationService {
         type: type,
         isRead: false,
         createdAt: DateTime.now(),
+        priority: priority,
         data: data ?? {},
       );
 
@@ -338,11 +477,41 @@ class NotificationService {
       'total': _notifications.length,
       'unread': _unreadCount,
       'read': _notifications.length - _unreadCount,
+      'chatMessages': getChatNotifications().length,
+      'unreadChatMessages': getUnreadChatNotificationsCount(),
       ...stats,
     };
   }
 
-  // Limpiar recursos - MEJORADO
+  // 🔧 CORREGIDO: Verificar si hay notificaciones recientes de un chat específico (SIN async)
+  bool hasRecentChatNotifications(String chatId, {int minutes = 5}) {
+    final cutoffTime = DateTime.now().subtract(Duration(minutes: minutes));
+    
+    return _notifications.any((notification) {
+      if (notification.type != 'message') return false;
+      
+      final notificationChatId = notification.getData<String>('chatId');
+      return notificationChatId == chatId && 
+             notification.createdAt.isAfter(cutoffTime);
+    });
+  }
+
+  // Obtener última notificación de chat
+  NotificationModel? getLastChatNotification(String chatId) {
+    final chatNotifications = _notifications.where((notification) {
+      if (notification.type != 'message') return false;
+      final notificationChatId = notification.getData<String>('chatId');
+      return notificationChatId == chatId;
+    }).toList();
+
+    if (chatNotifications.isEmpty) return null;
+    
+    // Ordenar por fecha y devolver la más reciente
+    chatNotifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return chatNotifications.first;
+  }
+
+  // Limpiar recursos
   void dispose() {
     _notificationsSubscription?.cancel();
     _notificationsController?.close();

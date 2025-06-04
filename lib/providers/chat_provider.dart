@@ -1,13 +1,15 @@
-// Archivo: lib/providers/chat_provider.dart
-// Provider para manejo de estado de chats y mensajes - CORREGIDO PARA LOGOUT SEGURO
+// File: lib/providers/chat_provider.dart
+// Provider para manejo de estado de chats y mensajes con notificaciones integradas
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/chat_model.dart';
 import '../services/chat_service.dart';
+import '../services/notification_service.dart';
 
 class ChatProvider with ChangeNotifier {
   final ChatService _chatService = ChatService();
+  final NotificationService _notificationService = NotificationService();
 
   // Estado del provider
   List<ChatModel> _userChats = [];
@@ -18,7 +20,7 @@ class ChatProvider with ChangeNotifier {
   String? _error;
   int _totalUnreadCount = 0;
   
-  // NUEVO: Flag para prevenir operaciones durante logout
+  // Flag para prevenir operaciones durante logout
   bool _isClearing = false;
   String? _currentUserId; // Para tracking del usuario actual
 
@@ -28,8 +30,6 @@ class ChatProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   int get totalUnreadCount => _totalUnreadCount;
-
-  // NUEVO: Getter para verificar si está limpiando
   bool get isClearing => _isClearing;
 
   // Obtener mensajes de un chat específico
@@ -46,7 +46,7 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
-  // CORREGIDO: Inicializar chats del usuario con protección
+  // Inicializar chats del usuario con protección
   Future<void> initializeUserChats(String userId) async {
     // No inicializar si estamos limpiando
     if (_isClearing) {
@@ -63,7 +63,7 @@ class ChatProvider with ChangeNotifier {
       // Limpiar suscripciones anteriores
       await _clearAllSubscriptions();
 
-      // NUEVO: Verificar otra vez si no estamos limpiando después del delay
+      // Verificar otra vez si no estamos limpiando después del delay
       if (_isClearing) {
         debugPrint('🚫 Limpieza iniciada durante inicialización, abortando');
         return;
@@ -171,7 +171,7 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
-  // CORREGIDO: Inicializar mensajes de un chat específico con protección
+  // Inicializar mensajes de un chat específico con protección
   void _initializeChatMessages(String chatId) {
     if (_isClearing) return;
 
@@ -207,7 +207,7 @@ class ChatProvider with ChangeNotifier {
     _initializeChatMessages(chatId);
   }
 
-  // Enviar mensaje con protección
+  // Enviar mensaje con notificaciones automáticas integradas
   Future<bool> sendMessage({
     required String chatId,
     required String senderId,
@@ -219,6 +219,13 @@ class ChatProvider with ChangeNotifier {
     if (_isClearing) return false;
 
     try {
+      debugPrint('📤 ChatProvider - Enviando mensaje con notificaciones...');
+      
+      // El ChatService ya maneja automáticamente:
+      // 1. Guardar el mensaje en Firestore
+      // 2. Actualizar el chat con último mensaje y contadores
+      // 3. Crear notificación en historial
+      // 4. Enviar push notification al receptor
       final success = await _chatService.sendMessage(
         chatId: chatId,
         senderId: senderId,
@@ -229,6 +236,7 @@ class ChatProvider with ChangeNotifier {
       );
 
       if (success && !_isClearing) {
+        debugPrint('✅ Mensaje enviado con notificaciones automáticas');
         // El mensaje se actualizará automáticamente a través del stream
         notifyListeners();
       }
@@ -236,23 +244,31 @@ class ChatProvider with ChangeNotifier {
       return success;
     } catch (e) {
       if (!_isClearing) {
+        debugPrint('❌ Error enviando mensaje: $e');
         _setError('Error enviando mensaje: $e');
       }
       return false;
     }
   }
 
-  // Marcar mensajes como leídos con protección
+  // Marcar mensajes como leídos con notificaciones
   Future<bool> markMessagesAsRead(String chatId, String userId) async {
     if (_isClearing) return false;
 
     try {
+      debugPrint('👁️ ChatProvider - Marcando mensajes como leídos...');
+      
+      // Marcar mensajes como leídos en el chat
       final success = await _chatService.markMessagesAsRead(
         chatId: chatId,
         userId: userId,
       );
 
       if (success && !_isClearing) {
+        // También marcar notificaciones relacionadas como leídas
+        await _notificationService.markChatNotificationsAsRead(userId, chatId);
+        
+        debugPrint('✅ Mensajes y notificaciones marcados como leídos');
         // Los contadores se actualizarán automáticamente a través de los streams
         notifyListeners();
       }
@@ -260,7 +276,28 @@ class ChatProvider with ChangeNotifier {
       return success;
     } catch (e) {
       if (!_isClearing) {
-        debugPrint('Error marcando mensajes como leídos: $e');
+        debugPrint('❌ Error marcando mensajes como leídos: $e');
+      }
+      return false;
+    }
+  }
+
+  // Marcar todas las notificaciones de chat como leídas
+  Future<bool> markAllChatNotificationsAsRead() async {
+    if (_isClearing || _currentUserId == null) return false;
+
+    try {
+      final success = await _notificationService.markAllChatNotificationsAsRead(_currentUserId!);
+      
+      if (success && !_isClearing) {
+        debugPrint('✅ Todas las notificaciones de chat marcadas como leídas');
+        notifyListeners();
+      }
+      
+      return success;
+    } catch (e) {
+      if (!_isClearing) {
+        debugPrint('❌ Error marcando todas las notificaciones de chat como leídas: $e');
       }
       return false;
     }
@@ -400,7 +437,18 @@ class ChatProvider with ChangeNotifier {
     };
   }
 
-  // CORREGIDO: Limpiar todas las suscripciones de manera más robusta
+  // Obtener estadísticas de notificaciones de chat
+  Map<String, int> getChatNotificationStats() {
+    if (_isClearing) return {};
+    
+    final notificationStats = _notificationService.getNotificationStats();
+    return {
+      'totalChatNotifications': notificationStats['chatMessages'] ?? 0,
+      'unreadChatNotifications': notificationStats['unreadChatMessages'] ?? 0,
+    };
+  }
+
+  // Limpiar todas las suscripciones de manera robusta
   Future<void> _clearAllSubscriptions() async {
     debugPrint('🧹 ChatProvider - Iniciando limpieza de suscripciones...');
     
@@ -434,7 +482,7 @@ class ChatProvider with ChangeNotifier {
     debugPrint('✅ Todas las suscripciones de ChatProvider canceladas');
   }
 
-  // CORREGIDO: Limpiar datos del usuario (logout) de manera más robusta
+  // Limpiar datos del usuario (logout) de manera robusta
   Future<void> clearUserData() async {
     debugPrint('🧹 ChatProvider - Iniciando limpieza completa...');
     
@@ -454,7 +502,6 @@ class ChatProvider with ChangeNotifier {
       _currentUserId = null;
       
       debugPrint('✅ ChatProvider completamente limpiado');
-      
       // Notificar cambios antes de resetear el flag
       notifyListeners();
       

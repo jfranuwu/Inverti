@@ -1,4 +1,4 @@
-// File: lib/services/fcm_service.dart
+// lib/services/fcm_service.dart
 
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -76,8 +76,7 @@ class FCMService {
     debugPrint('📱 Estado de permisos FCM: ${settings.authorizationStatus}');
   }
 
-  // FCMService prueba de notificacion
-// Método para probar notificación FCM
+  // Método para probar notificación FCM
   Future<void> testNotification() async {
     try {
       debugPrint('🧪 Iniciando prueba de notificación...');
@@ -355,6 +354,9 @@ class FCMService {
     final type = data['type'];
 
     switch (type) {
+      case 'chat_message':
+        debugPrint('Navegar a chat: ${data['chatId']}');
+        break;
       case 'investor_interest':
         debugPrint('Navegar a inversores interesados: ${data['projectId']}');
         break;
@@ -454,6 +456,71 @@ class FCMService {
 
     } catch (e) {
       debugPrint('❌ Error en _sendPushNotificationV1: $e');
+    }
+  }
+
+  // NUEVO: Envía notificación específica de mensaje de chat
+  Future<void> sendChatMessageNotification({
+    required String receiverId,
+    required String senderName,
+    required String messageContent,
+    required String chatId,
+    String? projectTitle,
+  }) async {
+    try {
+      debugPrint('💬 Enviando notificación de mensaje de chat...');
+      
+      // Obtener token del receptor
+      final receiverDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(receiverId)
+          .get();
+
+      if (!receiverDoc.exists) {
+        debugPrint('❌ Usuario receptor no encontrado: $receiverId');
+        return;
+      }
+
+      final receiverData = receiverDoc.data()!;
+      final receiverToken = receiverData['fcmToken'] as String?;
+
+      if (receiverToken == null) {
+        debugPrint('❌ Token FCM no encontrado para receptor: $receiverId');
+        return;
+      }
+
+      // Preparar título y cuerpo de la notificación
+      final title = '💬 $senderName';
+      String body = messageContent;
+      
+      // Truncar mensaje si es muy largo
+      if (body.length > 100) {
+        body = '${body.substring(0, 97)}...';
+      }
+
+      // Datos para navegación
+      final notificationData = {
+        'type': 'chat_message',
+        'chatId': chatId,
+        'senderId': FirebaseAuth.instance.currentUser?.uid ?? '',
+        'senderName': senderName,
+        'receiverId': receiverId,
+        'projectTitle': projectTitle ?? '',
+        'clickAction': 'OPEN_CHAT',
+      };
+
+      // Enviar notificación push
+      await _sendPushNotificationV1(
+        token: receiverToken,
+        title: title,
+        body: body,
+        data: notificationData,
+      );
+
+      debugPrint('✅ Notificación de chat enviada exitosamente');
+      
+    } catch (e) {
+      debugPrint('❌ Error enviando notificación de chat: $e');
     }
   }
 

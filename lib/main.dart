@@ -1,5 +1,5 @@
-// Archivo: lib/main.dart
-// Punto de entrada simplificado - AuthWrapper maneja toda la navegación
+// File: lib/main.dart
+// Punto de entrada con background handler para notificaciones de chat
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -19,6 +19,7 @@ import 'services/fcm_service.dart';
 import 'screens/splash_screen.dart';
 import 'widgets/auth_wrapper.dart';
 
+// Background handler para notificaciones - maneja mensajes cuando la app está cerrada
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (Firebase.apps.isEmpty) {
@@ -26,7 +27,29 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       options: FirebaseConfig.currentPlatform,
     );
   }
+  
   debugPrint('🔔 Mensaje FCM recibido en segundo plano: ${message.messageId}');
+  debugPrint('🔔 Tipo: ${message.data['type']}');
+  
+  // Manejar diferentes tipos de notificaciones
+  final messageType = message.data['type'];
+  
+  switch (messageType) {
+    case 'chat_message':
+      debugPrint('💬 Mensaje de chat recibido en background');
+      debugPrint('💬 De: ${message.data['senderName']}');
+      debugPrint('💬 Chat ID: ${message.data['chatId']}');
+      break;
+    case 'investor_interest':
+      debugPrint('🎯 Notificación de interés de inversor en background');
+      break;
+    case 'project_funded':
+      debugPrint('🎉 Notificación de proyecto financiado en background');
+      break;
+    default:
+      debugPrint('📢 Notificación general en background');
+      break;
+  }
 }
 
 void main() async {
@@ -39,6 +62,7 @@ void main() async {
       );
     }
     
+    // Configurar background handler para notificaciones
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     await _initializeServices();
     
@@ -75,6 +99,7 @@ void main() async {
   }
 }
 
+// Inicializar servicios de notificaciones
 Future<void> _initializeServices() async {
   try {
     await NotificationService().initialize();
@@ -128,6 +153,7 @@ class _AppInitializerState extends State<AppInitializer> {
     _initializeApp();
   }
 
+  // Inicializar app y registrar providers para limpieza automática
   Future<void> _initializeApp() async {
     try {
       // Registrar providers para limpieza

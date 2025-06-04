@@ -1,10 +1,12 @@
-// Archivo: lib/services/chat_service.dart
-// Servicio para manejo de chats y mensajes
+// File: lib/services/chat_service.dart
+// Servicio para manejo de chats y mensajes con notificaciones integradas
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/chat_model.dart';
+import 'fcm_service.dart';
+import 'notification_service.dart';
 
 class ChatService {
   static final ChatService _instance = ChatService._internal();
@@ -12,6 +14,8 @@ class ChatService {
   ChatService._internal();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FCMService _fcmService = FCMService();
+  final NotificationService _notificationService = NotificationService();
 
   // Crear o obtener chat existente entre dos usuarios
   Future<String?> createOrGetChat({
@@ -116,7 +120,7 @@ class ChatService {
     });
   }
 
-  // Enviar mensaje de texto
+  // Enviar mensaje de texto con notificaciones automáticas
   Future<bool> sendMessage({
     required String chatId,
     required String senderId,
@@ -161,11 +165,12 @@ class ChatService {
       }
 
       final chat = ChatModel.fromFirestore(chatDoc);
-      final otherUserId = chat.getOtherParticipant(senderId);
+      final receiverId = chat.getOtherParticipant(senderId);
+      final receiverName = chat.getOtherParticipantName(senderId);
 
-      // Actualizar unreadCount para el otro usuario
+      // Actualizar unreadCount para el receptor
       final newUnreadCount = Map<String, int>.from(chat.unreadCount);
-      newUnreadCount[otherUserId] = (newUnreadCount[otherUserId] ?? 0) + 1;
+      newUnreadCount[receiverId] = (newUnreadCount[receiverId] ?? 0) + 1;
       newUnreadCount[senderId] = 0; // Reset para el remitente
 
       final chatUpdateData = {
@@ -180,11 +185,71 @@ class ChatService {
 
       await batch.commit();
 
+      // 3. Enviar notificación al receptor (no bloquear si falla)
+      _sendChatNotification(
+        receiverId: receiverId,
+        receiverName: receiverName,
+        senderName: senderName,
+        messageContent: content,
+        chatId: chatId,
+        projectTitle: chat.projectTitle,
+      ).catchError((error) {
+        debugPrint('⚠️ Error enviando notificación de chat: $error');
+      });
+
       debugPrint('✅ Mensaje enviado exitosamente');
       return true;
     } catch (e) {
       debugPrint('❌ Error enviando mensaje: $e');
       return false;
+    }
+  }
+
+  // Enviar notificación de mensaje de chat
+  Future<void> _sendChatNotification({
+    required String receiverId,
+    required String receiverName,
+    required String senderName,
+    required String messageContent,
+    required String chatId,
+    String? projectTitle,
+  }) async {
+    try {
+      // Crear título y cuerpo de la notificación
+      final title = '💬 Mensaje de $senderName';
+      String body = messageContent;
+      
+      // Truncar mensaje si es muy largo
+      if (body.length > 100) {
+        body = '${body.substring(0, 97)}...';
+      }
+      
+      // Agregar contexto del proyecto si existe
+      if (projectTitle != null) {
+        body = '$body\n📁 $projectTitle';
+      }
+
+      // Crear notificación en historial
+      await _notificationService.createChatNotification(
+        receiverId: receiverId,
+        senderName: senderName,
+        messageContent: messageContent,
+        chatId: chatId,
+        projectTitle: projectTitle,
+      );
+
+      // Enviar push notification
+      await _fcmService.sendChatMessageNotification(
+        receiverId: receiverId,
+        senderName: senderName,
+        messageContent: messageContent,
+        chatId: chatId,
+        projectTitle: projectTitle,
+      );
+
+      debugPrint('✅ Notificación de chat enviada a $receiverName');
+    } catch (e) {
+      debugPrint('❌ Error enviando notificación de chat: $e');
     }
   }
 

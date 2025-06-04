@@ -1,140 +1,283 @@
-// Archivo: lib/screens/chat/chat_screen.dart
-// Pantalla principal de conversación entre usuarios - CORREGIDA SIN LOOP INFINITO
+// File: lib/screens/chat/chat_screen.dart
+// Pantalla de chat completa con notificaciones integradas
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/chat_model.dart';
-import '../../providers/auth_provider.dart';
-import '../../services/chat_service.dart';
-import '../../widgets/custom_card.dart';
-import '../project/project_detail_screen.dart';
-import '../profile/public_profile_screen.dart';
+import '../../providers/chat_provider.dart';
+import '../../widgets/chat_notification_widget.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatId;
-  final String? otherUserId;
-  final String? otherUserName;
+  final String otherUserId;
+  final String otherUserName;
+  final String? projectTitle;
 
   const ChatScreen({
     super.key,
     required this.chatId,
-    this.otherUserId,
-    this.otherUserName,
+    required this.otherUserId,
+    required this.otherUserName,
+    this.projectTitle,
   });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final ChatService _chatService = ChatService();
-  
-  bool _isLoading = false;
-  bool _isSendingMessage = false;
-  bool _hasMarkedAsRead = false; // 🔧 NUEVO: Flag para evitar loop
-  ChatModel? _chat;
+  final FocusNode _messageFocusNode = FocusNode();
+  String? _currentUserId;
+  bool _isAppInForeground = true;
+  bool _isTyping = false;
 
   @override
   void initState() {
     super.initState();
-    _loadChatInfo();
+    WidgetsBinding.instance.addObserver(this);
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    
+    if (_currentUserId != null) {
+      // Cargar mensajes del chat
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<ChatProvider>().loadChatMessages(widget.chatId);
+        // Marcar mensajes como leídos al entrar al chat
+        _markMessagesAsRead();
+      });
+    }
+
+    // Listener para detectar cuando el usuario está escribiendo
+    _messageController.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.dispose();
+    _messageFocusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _loadChatInfo() async {
-    final chat = await _chatService.getChatById(widget.chatId);
-    if (chat != null && mounted) {
+  // Detectar cambios en el texto para mostrar indicador de escritura
+  void _onTextChanged() {
+    final hasText = _messageController.text.trim().isNotEmpty;
+    if (hasText != _isTyping) {
       setState(() {
-        _chat = chat;
+        _isTyping = hasText;
       });
-      
-      // 🔧 CORREGIDO: Solo marcar como leído UNA VEZ al cargar
-      if (!_hasMarkedAsRead) {
-        _markMessagesAsRead();
-        _hasMarkedAsRead = true;
-      }
     }
   }
 
-  Future<void> _markMessagesAsRead() async {
-    final currentUserId = context.read<AuthProvider>().user?.uid;
-    if (currentUserId != null) {
-      debugPrint('📖 Marcando mensajes como leídos (solo una vez)');
-      await _chatService.markMessagesAsRead(
+  // Detectar cuando la app vuelve al primer plano para marcar mensajes como leídos
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _isAppInForeground = true;
+        // Marcar mensajes como leídos cuando la app vuelve al primer plano
+        if (_currentUserId != null) {
+          _markMessagesAsRead();
+        }
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        _isAppInForeground = false;
+        break;
+      case AppLifecycleState.detached:
+        _isAppInForeground = false;
+        break;
+      case AppLifecycleState.hidden:
+        _isAppInForeground = false;
+        break;
+    }
+  }
+
+  // Marcar mensajes como leídos
+  void _markMessagesAsRead() {
+    if (_currentUserId != null) {
+      context.read<ChatProvider>().markMessagesAsRead(widget.chatId, _currentUserId!);
+    }
+  }
+
+  // Enviar mensaje con notificaciones automáticas
+  Future<void> _sendMessage() async {
+    final content = _messageController.text.trim();
+    if (content.isEmpty || _currentUserId == null) return;
+
+    final chatProvider = context.read<ChatProvider>();
+    final currentUser = FirebaseAuth.instance.currentUser;
+    
+    if (currentUser == null) return;
+
+    try {
+      // Limpiar el campo inmediatamente para mejor UX
+      _messageController.clear();
+      setState(() {
+        _isTyping = false;
+      });
+
+      final success = await chatProvider.sendMessage(
         chatId: widget.chatId,
-        userId: currentUserId,
+        senderId: _currentUserId!,
+        senderName: currentUser.displayName ?? 'Usuario',
+        content: content,
+        type: MessageType.text,
+      );
+
+      if (success) {
+        // Scroll al final después de enviar
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToBottom();
+        });
+      } else {
+        // Si falla, restaurar el mensaje
+        _messageController.text = content;
+        _showErrorSnackBar('Error enviando mensaje');
+      }
+    } catch (e) {
+      // Si falla, restaurar el mensaje
+      _messageController.text = content;
+      _showErrorSnackBar('Error enviando mensaje: $e');
+    }
+  }
+
+  // Scroll al final de la conversación
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
       );
     }
   }
 
-  Future<void> _sendMessage() async {
-    final currentUser = context.read<AuthProvider>().user;
-    final userModel = context.read<AuthProvider>().userModel;
-    
-    if (currentUser == null || userModel == null) return;
-    
-    final messageText = _messageController.text.trim();
-    if (messageText.isEmpty) return;
-
-    setState(() {
-      _isSendingMessage = true;
-    });
-
-    final success = await _chatService.sendMessage(
-      chatId: widget.chatId,
-      senderId: currentUser.uid,
-      senderName: userModel.name,
-      content: messageText,
-    );
-
-    if (success) {
-      _messageController.clear();
-      _scrollToBottom();
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al enviar mensaje'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-
+  // Mostrar error
+  void _showErrorSnackBar(String message) {
     if (mounted) {
-      setState(() {
-        _isSendingMessage = false;
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'Cerrar',
+            textColor: Colors.white,
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            },
+          ),
+        ),
+      );
     }
   }
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
-    }
+  // Mostrar opciones del chat
+  void _showChatOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Información del chat'),
+              onTap: () {
+                Navigator.pop(context);
+                _showChatInfo();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications_off),
+              title: const Text('Silenciar notificaciones'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Implementar silenciar notificaciones
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.block),
+              title: const Text('Bloquear usuario'),
+              onTap: () {
+                Navigator.pop(context);
+                _showBlockUserDialog();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Mostrar información del chat
+  void _showChatInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Información del chat'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Usuario: ${widget.otherUserName}'),
+            if (widget.projectTitle != null)
+              Text('Proyecto: ${widget.projectTitle}'),
+            const SizedBox(height: 16.0),
+            Consumer<ChatProvider>(
+              builder: (context, chatProvider, child) {
+                final messages = chatProvider.getChatMessages(widget.chatId);
+                return Text('Mensajes: ${messages.length}');
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Mostrar diálogo de bloquear usuario
+  void _showBlockUserDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Bloquear usuario'),
+        content: Text('¿Estás seguro de que quieres bloquear a ${widget.otherUserName}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Implementar bloquear usuario
+              _showErrorSnackBar('Función no implementada aún');
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Bloquear'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = context.watch<AuthProvider>().user?.uid;
-    
-    if (currentUserId == null) {
+    if (_currentUserId == null) {
       return const Scaffold(
         body: Center(
           child: Text('Error: Usuario no autenticado'),
@@ -143,378 +286,312 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     return Scaffold(
-      body: StreamBuilder<ChatModel?>(
-        stream: _chatService.getChatStream(widget.chatId),
-        builder: (context, chatSnapshot) {
-          if (chatSnapshot.connectionState == ConnectionState.waiting && _chat == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final chat = chatSnapshot.data ?? _chat;
-          if (chat == null) {
-            return const Center(
-              child: Text('Chat no encontrado'),
-            );
-          }
-
-          final otherUserId = chat.getOtherParticipant(currentUserId);
-          final otherUserName = chat.getOtherParticipantName(currentUserId);
-          final otherUserType = chat.getOtherParticipantType(currentUserId);
-
-          return Column(
+      appBar: AppBar(
+        title: GestureDetector(
+          onTap: _showChatInfo,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // App Bar personalizada
-              _buildCustomAppBar(chat, otherUserName, otherUserType),
-              
-              // Información del proyecto si existe
-              if (chat.projectId != null && chat.projectTitle != null)
-                _buildProjectInfo(chat),
-              
+              Text(
+                widget.otherUserName,
+                style: const TextStyle(fontSize: 16.0),
+              ),
+              if (widget.projectTitle != null)
+                Text(
+                  widget.projectTitle!,
+                  style: const TextStyle(
+                    fontSize: 12.0, 
+                    fontWeight: FontWeight.normal,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          // Badge de notificaciones de chat
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: ChatNotificationBadge(
+              userId: _currentUserId!,
+              child: IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: () {
+                  // Navegar a pantalla de notificaciones
+                  Navigator.pushNamed(context, '/notifications');
+                },
+              ),
+            ),
+          ),
+          // Opciones del chat
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: _showChatOptions,
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
               // Lista de mensajes
               Expanded(
-                child: StreamBuilder<List<MessageModel>>(
-                  stream: _chatService.getChatMessagesStream(widget.chatId),
-                  builder: (context, messagesSnapshot) {
-                    if (messagesSnapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
+                child: Consumer<ChatProvider>(
+                  builder: (context, chatProvider, child) {
+                    final messages = chatProvider.getChatMessages(widget.chatId);
+                    
+                    if (chatProvider.isLoading && messages.isEmpty) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
                     }
 
-                    final messages = messagesSnapshot.data ?? [];
+                    if (chatProvider.error != null) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 64.0,
+                              color: Colors.red[400],
+                            ),
+                            const SizedBox(height: 16.0),
+                            Text(
+                              'Error cargando mensajes',
+                              style: TextStyle(
+                                fontSize: 18.0,
+                                color: Colors.red[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8.0),
+                            Text(
+                              chatProvider.error!,
+                              style: TextStyle(color: Colors.grey[600]),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16.0),
+                            ElevatedButton(
+                              onPressed: () {
+                                chatProvider.clearError();
+                                chatProvider.loadChatMessages(widget.chatId);
+                              },
+                              child: const Text('Reintentar'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
 
                     if (messages.isEmpty) {
-                      return _buildEmptyState(otherUserName);
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 64.0,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16.0),
+                            Text(
+                              'Inicia la conversación',
+                              style: TextStyle(
+                                fontSize: 18.0,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            if (widget.projectTitle != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: Text(
+                                  'Proyecto: ${widget.projectTitle}',
+                                  style: TextStyle(
+                                    fontSize: 14.0,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 16.0),
+                            Text(
+                              '¡Envía tu primer mensaje!',
+                              style: TextStyle(
+                                fontSize: 14.0,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
                     }
 
-                    // 🔧 CORREGIDO: Auto-scroll solo cuando hay mensajes nuevos
-                    // Sin llamar markAsRead repetidamente
+                    // Auto-scroll al final cuando hay mensajes nuevos
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _scrollToBottom(); // Solo scroll, no mark as read
+                      _scrollToBottom();
                     });
 
                     return ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16.0),
                       itemCount: messages.length,
                       itemBuilder: (context, index) {
                         final message = messages[index];
-                        final isFromCurrentUser = message.isFromUser(currentUserId);
-                        final showDateHeader = _shouldShowDateHeader(messages, index);
-                        
-                        return Column(
-                          children: [
-                            if (showDateHeader)
-                              _buildDateHeader(message.createdAt),
-                            
-                            _buildMessageBubble(message, isFromCurrentUser),
-                          ],
-                        );
+                        final isCurrentUser = message.senderId == _currentUserId;
+                        final isSystemMessage = message.senderId == 'system';
+
+                        // Marcar mensajes como leídos al hacerlos visibles
+                        if (!isCurrentUser && !message.isRead && _isAppInForeground) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _markMessagesAsRead();
+                          });
+                        }
+
+                        return _buildMessageBubble(message, isCurrentUser, isSystemMessage);
                       },
                     );
                   },
                 ),
               ),
-              
-              // Campo de entrada de mensaje
-              _buildMessageInput(),
-            ],
-          );
-        },
-      ),
-    );
-  }
 
-  Widget _buildCustomAppBar(ChatModel chat, String otherUserName, String otherUserType) {
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.withOpacity(0.2),
-              width: 1,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back),
-            ),
-            
-            // Avatar del otro usuario
-            GestureDetector(
-              onTap: () => _navigateToProfile(chat),
-              child: CircleAvatar(
-                radius: 20,
-                backgroundColor: Theme.of(context).primaryColor,
-                child: Text(
-                  _getInitials(otherUserName),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+              // Campo de texto para escribir mensajes
+              Container(
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  border: Border(
+                    top: BorderSide(
+                      color: Colors.grey[300]!,
+                      width: 1.0,
+                    ),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10.0,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(25.0),
+                          ),
+                          child: TextField(
+                            controller: _messageController,
+                            focusNode: _messageFocusNode,
+                            decoration: const InputDecoration(
+                              hintText: 'Escribe un mensaje...',
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16.0,
+                                vertical: 12.0,
+                              ),
+                            ),
+                            maxLines: null,
+                            textCapitalization: TextCapitalization.sentences,
+                            onSubmitted: (_) => _sendMessage(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8.0),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: _isTyping 
+                              ? Theme.of(context).primaryColor 
+                              : Colors.grey[400],
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: Icon(
+                            _isTyping ? Icons.send : Icons.send_outlined,
+                            color: Colors.white,
+                          ),
+                          onPressed: _isTyping ? _sendMessage : null,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            
-            // Información del usuario
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _navigateToProfile(chat),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            otherUserName,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (otherUserType == 'investor') ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.account_balance_wallet,
-                            size: 16,
-                            color: Colors.green[600],
-                          ),
-                        ] else if (otherUserType == 'entrepreneur') ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.business,
-                            size: 16,
-                            color: Colors.blue[600],
-                          ),
-                        ],
-                      ],
-                    ),
-                    Text(
-                      otherUserType == 'investor' ? 'Inversor' : 'Emprendedor',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
-            // Botones de acción
-            PopupMenuButton<String>(
-  icon: const Icon(Icons.more_vert),
-  itemBuilder: (context) => [
-    PopupMenuItem(
-      value: 'profile',
-      child: Row(
-        children: [
-          const Icon(Icons.person, size: 20),
-          const SizedBox(width: 8),
-          Expanded( // ← SOLUCIÓN: Envolver el Text en Expanded
-            child: Text(
-              'Ver perfil de $otherUserName',
-              overflow: TextOverflow.ellipsis, // ← Truncar si es muy largo
-              maxLines: 1,
-            ),
-          ),
-        ],
-      ),
-    ),
-    if (chat.projectId != null)
-      const PopupMenuItem(
-        value: 'project',
-        child: Row(
-          children: [
-            Icon(Icons.business, size: 20),
-            SizedBox(width: 8),
-            Expanded( // ← También aplicar aquí para consistencia
-              child: Text(
-                'Ver proyecto',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-          ],
-        ),
-      ),
-  ],
-  onSelected: (value) => _handleMenuAction(value, chat),
-),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProjectInfo(ChatModel chat) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      child: CustomCard(
-        onTap: () => _navigateToProject(chat.projectId!),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Icon(
-                Icons.business,
-                color: Theme.of(context).primaryColor,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Proyecto:',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    Text(
-                      chat.projectTitle!,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Colors.grey[400],
-              ),
             ],
           ),
-        ),
-      ),
-    );
-  }
 
-  Widget _buildEmptyState(String otherUserName) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.chat_bubble_outline,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '¡Inicia la conversación!',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Envía tu primer mensaje a $otherUserName',
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontSize: 14,
-            ),
-            textAlign: TextAlign.center,
+          // Widget de notificación en tiempo real para esta conversación
+          ChatMessageNotificationWidget(
+            chatId: widget.chatId,
+            currentUserId: _currentUserId!,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDateHeader(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date).inDays;
-    
-    String dateText;
-    if (difference == 0) {
-      dateText = 'Hoy';
-    } else if (difference == 1) {
-      dateText = 'Ayer';
-    } else if (difference < 7) {
-      const weekdays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-      dateText = weekdays[date.weekday - 1];
-    } else {
-      dateText = '${date.day}/${date.month}/${date.year}';
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.grey[200],
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            dateText,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
+  // Construir burbuja de mensaje completa
+  Widget _buildMessageBubble(MessageModel message, bool isCurrentUser, bool isSystemMessage) {
+    if (isSystemMessage) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(12.0),
+            ),
+            child: Text(
+              message.content,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12.0,
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildMessageBubble(MessageModel message, bool isFromCurrentUser) {
-    if (message.type == MessageType.system) {
-      return _buildSystemMessage(message);
+      );
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.only(bottom: 12.0),
       child: Row(
-        mainAxisAlignment: isFromCurrentUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isCurrentUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (!isFromCurrentUser) ...[
+          if (!isCurrentUser) ...[
             CircleAvatar(
-              radius: 12,
-              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.7),
+              radius: 16.0,
+              backgroundColor: Theme.of(context).primaryColor,
               child: Text(
-                _getInitials(message.senderName),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
+                widget.otherUserName.isNotEmpty ? widget.otherUserName[0].toUpperCase() : 'U',
+                style: const TextStyle(color: Colors.white, fontSize: 12.0),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 8.0),
           ],
-          
           Flexible(
             child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.75,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
               decoration: BoxDecoration(
-                color: isFromCurrentUser
-                    ? Theme.of(context).primaryColor
+                color: isCurrentUser 
+                    ? Theme.of(context).primaryColor 
                     : Colors.grey[200],
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(isFromCurrentUser ? 18 : 4),
-                  bottomRight: Radius.circular(isFromCurrentUser ? 4 : 18),
+                  topLeft: const Radius.circular(18.0),
+                  topRight: const Radius.circular(18.0),
+                  bottomLeft: Radius.circular(isCurrentUser ? 18.0 : 4.0),
+                  bottomRight: Radius.circular(isCurrentUser ? 4.0 : 18.0),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 5.0,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -522,29 +599,31 @@ class _ChatScreenState extends State<ChatScreen> {
                   Text(
                     message.content,
                     style: TextStyle(
-                      color: isFromCurrentUser ? Colors.white : Colors.black87,
-                      fontSize: 16,
+                      color: isCurrentUser ? Colors.white : Colors.black87,
+                      fontSize: 16.0,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 4.0),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         message.timeFormat,
                         style: TextStyle(
-                          color: isFromCurrentUser 
-                              ? Colors.white.withOpacity(0.8)
+                          color: isCurrentUser 
+                              ? Colors.white.withOpacity(0.7) 
                               : Colors.grey[600],
-                          fontSize: 12,
+                          fontSize: 11.0,
                         ),
                       ),
-                      if (isFromCurrentUser && message.isRead) ...[
-                        const SizedBox(width: 4),
+                      if (isCurrentUser) ...[
+                        const SizedBox(width: 4.0),
                         Icon(
-                          Icons.done_all,
-                          size: 12,
-                          color: Colors.white.withOpacity(0.8),
+                          message.isRead ? Icons.done_all : Icons.done,
+                          size: 14.0,
+                          color: message.isRead 
+                              ? Colors.blue[300] 
+                              : Colors.white.withOpacity(0.7),
                         ),
                       ],
                     ],
@@ -553,188 +632,16 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ),
-          
-          if (isFromCurrentUser) ...[
-            const SizedBox(width: 8),
+          if (isCurrentUser) ...[
+            const SizedBox(width: 8.0),
             CircleAvatar(
-              radius: 12,
-              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.7),
-              child: Text(
-                _getInitials(message.senderName),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              radius: 16.0,
+              backgroundColor: Colors.grey[400],
+              child: const Icon(Icons.person, color: Colors.white, size: 16.0),
             ),
           ],
         ],
       ),
     );
-  }
-
-  Widget _buildSystemMessage(MessageModel message) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.blue[50],
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.blue[200]!),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 16,
-                color: Colors.blue[600],
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  message.content,
-                  style: TextStyle(
-                    color: Colors.blue[800],
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMessageInput() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(
-          top: BorderSide(
-            color: Colors.grey.withOpacity(0.2),
-            width: 1,
-          ),
-        ),
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: TextField(
-                  controller: _messageController,
-                  decoration: const InputDecoration(
-                    hintText: 'Escribe un mensaje...',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                  ),
-                  maxLines: null,
-                  textCapitalization: TextCapitalization.sentences,
-                  onSubmitted: (_) => _sendMessage(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            
-            // Botón de enviar
-            Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                onPressed: _isSendingMessage ? null : _sendMessage,
-                icon: _isSendingMessage
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.send,
-                        color: Colors.white,
-                      ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  bool _shouldShowDateHeader(List<MessageModel> messages, int index) {
-    if (index == 0) return true;
-    
-    final currentMessage = messages[index];
-    final previousMessage = messages[index - 1];
-    
-    return currentMessage.createdAt.day != previousMessage.createdAt.day ||
-           currentMessage.createdAt.month != previousMessage.createdAt.month ||
-           currentMessage.createdAt.year != previousMessage.createdAt.year;
-  }
-
-  String _getInitials(String name) {
-    final words = name.trim().split(' ');
-    if (words.length == 1) {
-      return words[0].isNotEmpty ? words[0][0].toUpperCase() : '?';
-    }
-    return '${words[0][0]}${words[1][0]}'.toUpperCase();
-  }
-
-  void _navigateToProfile(ChatModel chat) {
-    final currentUserId = context.read<AuthProvider>().user?.uid;
-    if (currentUserId == null) return;
-    
-    final otherUserId = chat.getOtherParticipant(currentUserId);
-    final otherUserName = chat.getOtherParticipantName(currentUserId);
-    
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PublicProfileScreen(
-          userId: otherUserId,
-          userName: otherUserName,
-        ),
-      ),
-    );
-  }
-
-  void _navigateToProject(String projectId) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Navegando al proyecto...'),
-      ),
-    );
-  }
-
-  void _handleMenuAction(String action, ChatModel chat) {
-    switch (action) {
-      case 'profile':
-        _navigateToProfile(chat);
-        break;
-      case 'project':
-        if (chat.projectId != null) {
-          _navigateToProject(chat.projectId!);
-        }
-        break;
-    }
   }
 }
