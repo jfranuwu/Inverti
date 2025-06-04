@@ -41,7 +41,7 @@ class _EntrepreneurHomeScreenState extends State<EntrepreneurHomeScreen>
     _pages = [
       const _HomeTab(),
       const _MyProjectsTab(),
-      const ChatsListScreen(), // NUEVA PANTALLA DE CHAT
+      const ChatsListScreen(showAppBar: false),
       const _InvestorsTab(),
       const ProfileScreen(),
     ];

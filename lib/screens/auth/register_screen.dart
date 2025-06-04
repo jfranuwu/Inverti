@@ -1,11 +1,11 @@
 // Archivo: lib/screens/auth/register_screen.dart
-// Pantalla de registro con validación de correo
+// Pantalla de registro con validación de correo - FLUJO MEJORADO
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../widgets/custom_button.dart';
-import '../role_selection_screen.dart';
+import 'email_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -36,9 +36,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  // Registrar nuevo usuario
+  // MODIFICADO: Registrar nuevo usuario con flujo mejorado
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    if (_selectedUserType.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor selecciona si eres inversor o emprendedor'),
+        ),
+      );
+      return;
+    }
     
     if (!_acceptTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -68,25 +77,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     if (success) {
-      // Mostrar diálogo de éxito
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('¡Registro exitoso!'),
-          content: const Text(
-            'Te hemos enviado un correo de verificación. '
-            'Por favor, verifica tu cuenta antes de iniciar sesión.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pop(); // Volver a login
-              },
-              child: const Text('Entendido'),
-            ),
-          ],
+      // NUEVO FLUJO: Navegar directamente a la pantalla de verificación
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const EmailVerificationScreen(),
         ),
       );
     } else {
@@ -132,41 +127,63 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 32),
                 
-                // Selección de tipo de usuario
-                Text(
-                  'Soy:',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: RadioListTile<String>(
-                        title: const Text('Inversor'),
-                        value: 'investor',
-                        groupValue: _selectedUserType,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedUserType = value!;
-                          });
-                        },
-                      ),
+                // Selección de tipo de usuario - MEJORADO
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _selectedUserType.isEmpty 
+                        ? Colors.grey[300]! 
+                        : Theme.of(context).primaryColor,
                     ),
-                    Expanded(
-                      child: RadioListTile<String>(
-                        title: const Text('Emprendedor'),
-                        value: 'entrepreneur',
-                        groupValue: _selectedUserType,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedUserType = value!;
-                          });
-                        },
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Selecciona tu rol:',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RadioListTile<String>(
+                              title: const Text('Inversor'),
+                              subtitle: const Text('Busco proyectos para invertir'),
+                              value: 'investor',
+                              groupValue: _selectedUserType,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedUserType = value!;
+                                });
+                              },
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                          Expanded(
+                            child: RadioListTile<String>(
+                              title: const Text('Emprendedor'),
+                              subtitle: const Text('Tengo un proyecto'),
+                              value: 'entrepreneur',
+                              groupValue: _selectedUserType,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedUserType = value!;
+                                });
+                              },
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
                 
                 // Campo de nombre
                 TextFormField(
@@ -195,6 +212,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Correo electrónico',
                     prefixIcon: Icon(Icons.email_outlined),
+                    helperText: 'Te enviaremos un enlace de verificación',
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {

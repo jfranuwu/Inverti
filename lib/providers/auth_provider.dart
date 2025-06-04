@@ -1,5 +1,5 @@
 // Archivo: lib/providers/auth_provider.dart
-// Provider para gestión de autenticación - LOGOUT CORREGIDO Y MEJORADO
+// Provider para gestión de autenticación - CON LIMPIEZA DE OTROS PROVIDERS
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -22,6 +22,11 @@ class AuthProvider extends ChangeNotifier {
   bool _mounted = true;
   bool _isSigningOut = false; // Para prevenir operaciones durante logout
   
+  // NUEVO: Referencias a otros providers para limpieza
+  dynamic _chatProvider;
+  dynamic _projectProvider;
+  dynamic _notificationService;
+  
   // Subscripción al stream de autenticación
   StreamSubscription<User?>? _authStateSubscription;
   
@@ -33,8 +38,23 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null && !_isSigningOut;
   bool get mounted => _mounted;
   
+  // NUEVO: Getter para verificación de email
+  bool get isEmailVerified => _user?.emailVerified ?? false;
+  
   AuthProvider() {
     _initializeAuthListener();
+  }
+  
+  // NUEVO: Registrar otros providers para limpieza en logout
+  void registerProvidersForCleanup({
+    dynamic chatProvider,
+    dynamic projectProvider,
+    dynamic notificationService,
+  }) {
+    _chatProvider = chatProvider;
+    _projectProvider = projectProvider;
+    _notificationService = notificationService;
+    debugPrint('✅ Providers registrados para limpieza en logout');
   }
   
   // Inicializar listener de autenticación de forma controlada
@@ -66,7 +86,7 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
     
-    debugPrint('🔄 Auth state changed: ${user?.uid}');
+    debugPrint('🔄 Auth state changed: ${user?.uid}, emailVerified: ${user?.emailVerified}');
     
     // Solo cambiar el usuario si realmente cambió
     if (_user?.uid != user?.uid) {
@@ -219,12 +239,12 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
   
-  // Inicio de sesión con email y contraseña
-  Future<bool> signInWithEmail({
+  // MODIFICADO: Inicio de sesión con email y contraseña CON VERIFICACIÓN
+  Future<String> signInWithEmail({
     required String email,
     required String password,
   }) async {
-    if (_isSigningOut) return false;
+    if (_isSigningOut) return 'error';
     
     try {
       _isLoading = true;
@@ -240,9 +260,18 @@ class AuthProvider extends ChangeNotifier {
       
       if (credential.user != null) {
         debugPrint('Sign in successful: ${credential.user!.uid}');
+        debugPrint('Email verified: ${credential.user!.emailVerified}');
+        
         _isLoading = false;
         if (_mounted) notifyListeners();
-        return true;
+        
+        // NUEVA LÓGICA: Verificar si el email está verificado
+        if (!credential.user!.emailVerified) {
+          debugPrint('⚠️ Email no verificado, requiere verificación');
+          return 'email_not_verified';
+        }
+        
+        return 'success';
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('FirebaseAuthException during sign in: ${e.code} - ${e.message}');
@@ -254,7 +283,7 @@ class AuthProvider extends ChangeNotifier {
     
     _isLoading = false;
     if (_mounted) notifyListeners();
-    return false;
+    return 'error';
   }
   
   // Inicio de sesión con Google
@@ -393,7 +422,44 @@ class AuthProvider extends ChangeNotifier {
     }
   }
   
-  // LOGOUT MEJORADO - Versión definitiva y segura
+  // NUEVO: Limpiar otros providers antes del logout
+  Future<void> _clearOtherProviders() async {
+    try {
+      debugPrint('🧹 Limpiando otros providers...');
+      
+      // Limpiar ChatProvider
+      if (_chatProvider != null) {
+        if (_chatProvider.clearUserData != null) {
+          await _chatProvider.clearUserData();
+          debugPrint('✅ ChatProvider limpiado');
+        }
+      }
+      
+      // Limpiar ProjectProvider  
+      if (_projectProvider != null) {
+        if (_projectProvider.clearOnLogout != null) {
+          await _projectProvider.clearOnLogout();
+          debugPrint('✅ ProjectProvider limpiado');
+        }
+      }
+      
+      // NUEVO: Limpiar NotificationService
+      if (_notificationService != null) {
+        if (_notificationService.clearOnLogout != null) {
+          await _notificationService.clearOnLogout();
+          debugPrint('✅ NotificationService limpiado');
+        }
+      }
+      
+      debugPrint('✅ Limpieza de providers completada');
+      
+    } catch (e) {
+      debugPrint('⚠️ Error limpiando providers (no crítico): $e');
+      // No lanzar error para no bloquear el logout
+    }
+  }
+  
+  // LOGOUT MEJORADO - CON LIMPIEZA DE OTROS PROVIDERS
   Future<void> signOut() async {
     if (_isSigningOut) {
       debugPrint('⚠️ Logout ya en progreso, ignorando...');
@@ -408,16 +474,19 @@ class AuthProvider extends ChangeNotifier {
       // 1. Pausar listener para evitar conflictos
       await _authStateSubscription?.cancel();
       
-      // 2. Limpiar FCM de forma segura
+      // 2. NUEVO: Limpiar otros providers ANTES del auth logout
+      await _clearOtherProviders();
+      
+      // 3. Limpiar FCM de forma segura
       await _safeFCMCleanup();
       
-      // 3. Limpiar estado local
+      // 4. Limpiar estado local
       _user = null;
       _userModel = null;
       _error = null;
       _isLoading = false;
       
-      // 4. Hacer logout de servicios
+      // 5. Hacer logout de servicios
       await Future.wait([
         _auth.signOut(),
         _googleSignIn.signOut(),
@@ -425,7 +494,7 @@ class AuthProvider extends ChangeNotifier {
       
       debugPrint('✅ Logout completado exitosamente');
       
-      // 5. Reactivar listener después de un delay
+      // 6. Reactivar listener después de un delay
       await Future.delayed(const Duration(milliseconds: 500));
       if (_mounted) {
         _initializeAuthListener();
@@ -504,15 +573,21 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
   
-  // Reenviar email de verificación
+  // MEJORADO: Reenviar email de verificación
   Future<bool> resendVerificationEmail() async {
     try {
       if (_user != null && !_user!.emailVerified) {
         await _user!.sendEmailVerification();
+        debugPrint('✅ Email de verificación reenviado');
         return true;
+      } else {
+        debugPrint('⚠️ Usuario no disponible o ya verificado');
+        return false;
       }
     } catch (e) {
+      debugPrint('❌ Error al reenviar email de verificación: $e');
       _error = 'Error al reenviar email de verificación: $e';
+      if (_mounted) notifyListeners();
     }
     return false;
   }
@@ -649,13 +724,14 @@ class AuthProvider extends ChangeNotifier {
     }
   }
   
-  // Verificar estado de verificación de email
+  // MEJORADO: Verificar estado de verificación de email
   Future<void> refreshUser() async {
     if (_isSigningOut) return;
     
     try {
       await _user?.reload();
       _user = _auth.currentUser;
+      debugPrint('🔄 Usuario refrescado - Email verificado: ${_user?.emailVerified}');
       if (_mounted) notifyListeners();
     } catch (e) {
       debugPrint('Error refreshing user: $e');

@@ -1,5 +1,5 @@
 // Archivo: lib/screens/auth/login_screen.dart
-// Pantalla de inicio de sesión con Google y Email
+// Pantalla de inicio de sesión con Google y Email - CON VERIFICACIÓN
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +7,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../widgets/custom_button.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
+import 'email_verification_screen.dart';
 import '../role_selection_screen.dart';
 import '../home/investor_home_screen.dart';
 import '../home/entrepreneur_home_screen.dart';
@@ -33,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // Iniciar sesión con email y contraseña
+  // MODIFICADO: Iniciar sesión con email y contraseña con verificación
   Future<void> _signInWithEmail() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -42,7 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.signInWithEmail(
+    final result = await authProvider.signInWithEmail(
       email: _emailController.text.trim(),
       password: _passwordController.text,
     );
@@ -53,15 +54,29 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = false;
     });
 
-    if (success) {
-      _navigateToHome();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authProvider.error ?? 'Error al iniciar sesión'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+    // Manejar diferentes resultados
+    switch (result) {
+      case 'success':
+        _navigateToHome();
+        break;
+      case 'email_not_verified':
+        // Navegar a pantalla de verificación
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const EmailVerificationScreen(),
+          ),
+        );
+        break;
+      case 'error':
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(authProvider.error ?? 'Error al iniciar sesión'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        break;
     }
   }
 

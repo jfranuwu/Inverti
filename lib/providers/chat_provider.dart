@@ -1,5 +1,5 @@
 // Archivo: lib/providers/chat_provider.dart
-// Provider para manejo de estado de chats y mensajes
+// Provider para manejo de estado de chats y mensajes - CON LIMPIEZA MEJORADA
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -316,30 +316,44 @@ class ChatProvider with ChangeNotifier {
     };
   }
 
-  // Limpiar todas las suscripciones
+  // Limpiar todas las suscripciones - MEJORADO CON DEBUG
   Future<void> _clearAllSubscriptions() async {
+    debugPrint('🧹 Limpiando ${_messageSubscriptions.length} suscripciones de mensajes...');
     for (final subscription in _messageSubscriptions.values) {
       await subscription.cancel();
     }
     _messageSubscriptions.clear();
 
+    debugPrint('🧹 Limpiando ${_chatSubscriptions.length} suscripciones de chats...');
     for (final subscription in _chatSubscriptions.values) {
       await subscription.cancel();
     }
     _chatSubscriptions.clear();
+    
+    debugPrint('✅ Todas las suscripciones de ChatProvider canceladas');
   }
 
-  // Limpiar datos del usuario (logout)
+  // Limpiar datos del usuario (logout) - MEJORADO CON DEBUG
   Future<void> clearUserData() async {
-    await _clearAllSubscriptions();
-    
-    _userChats.clear();
-    _chatMessages.clear();
-    _totalUnreadCount = 0;
-    _error = null;
-    _isLoading = false;
-    
-    notifyListeners();
+    try {
+      debugPrint('🧹 Limpiando datos de ChatProvider...');
+      
+      await _clearAllSubscriptions();
+      
+      _userChats.clear();
+      _chatMessages.clear();
+      _totalUnreadCount = 0;
+      _error = null;
+      _isLoading = false;
+      
+      debugPrint('✅ ChatProvider completamente limpiado');
+      
+      notifyListeners();
+      
+    } catch (e) {
+      debugPrint('❌ Error limpiando ChatProvider: $e');
+      // No lanzar error para no bloquear el logout
+    }
   }
 
   // Métodos de utilidad
@@ -367,6 +381,7 @@ class ChatProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    debugPrint('🧹 ChatProvider dispose() llamado');
     _clearAllSubscriptions();
     super.dispose();
   }

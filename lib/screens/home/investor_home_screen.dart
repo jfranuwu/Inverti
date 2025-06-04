@@ -55,7 +55,7 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen>
     _pages = [
       const _HomeTab(),
       const _PortfolioTab(),
-      const ChatsListScreen(), // NUEVA PANTALLA DE CHAT
+      const ChatsListScreen(showAppBar: false),
       _ExploreTab(
         categories: _categories,
         selectedCategory: _selectedCategory,

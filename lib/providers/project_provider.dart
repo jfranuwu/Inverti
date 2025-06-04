@@ -1,5 +1,5 @@
 // Archivo: lib/providers/project_provider.dart
-// Provider actualizado para manejo de proyectos con notificaciones automáticas
+// Provider actualizado para manejo de proyectos - CON LIMPIEZA EN LOGOUT
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -404,6 +404,37 @@ class ProjectProvider with ChangeNotifier {
       'totalViews': userProjects.fold<int>(0, (sum, p) => sum + (p.views ?? 0)),
       'totalFunding': userProjects.fold<double>(0, (sum, p) => sum + p.currentFunding),
     };
+  }
+
+  // NUEVO: Limpiar streams en logout
+  Future<void> clearOnLogout() async {
+    try {
+      debugPrint('🧹 Limpiando streams de ProjectProvider...');
+      
+      // Cancelar suscripciones activas
+      await _myProjectsSubscription?.cancel();
+      await _allProjectsSubscription?.cancel();
+      
+      // Limpiar variables
+      _myProjectsSubscription = null;
+      _allProjectsSubscription = null;
+      
+      // Limpiar datos locales
+      _allProjects.clear();
+      _myProjects.clear();
+      _featuredProjects.clear();
+      _error = null;
+      _isLoading = false;
+      
+      debugPrint('✅ ProjectProvider limpiado en logout');
+      
+      // Notificar cambios
+      notifyListeners();
+      
+    } catch (e) {
+      debugPrint('⚠️ Error limpiando ProjectProvider: $e');
+      // No lanzar error para no bloquear el logout
+    }
   }
 
   // Métodos de utilidad

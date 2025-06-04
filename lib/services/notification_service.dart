@@ -1,5 +1,5 @@
 // Archivo: lib/services/notification_service.dart
-// Servicio de notificaciones actualizado con integración FCM
+// Servicio de notificaciones - CON LIMPIEZA EN LOGOUT
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -81,6 +81,43 @@ class NotificationService {
     _notifications.clear();
     _unreadCount = 0;
     debugPrint('🔇 Listener de notificaciones detenido');
+  }
+
+  // NUEVO: Limpiar en logout
+  Future<void> clearOnLogout() async {
+    try {
+      debugPrint('🧹 Limpiando NotificationService en logout...');
+      
+      // Cancelar suscripción activa
+      await _notificationsSubscription?.cancel();
+      _notificationsSubscription = null;
+      
+      // Limpiar datos locales
+      _notifications.clear();
+      _unreadCount = 0;
+      
+      // Cerrar stream controller si existe
+      _notificationsController?.close();
+      _notificationsController = null;
+      
+      debugPrint('✅ NotificationService limpiado en logout');
+      
+    } catch (e) {
+      debugPrint('⚠️ Error limpiando NotificationService: $e');
+      // No lanzar error para no bloquear el logout
+    }
+  }
+
+  // NUEVO: Reinicializar después del logout
+  Future<void> reinitializeAfterLogout() async {
+    try {
+      if (_notificationsController == null) {
+        _notificationsController = StreamController<List<NotificationModel>>.broadcast();
+        debugPrint('✅ NotificationService reinicializado después del logout');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error reinicializando NotificationService: $e');
+    }
   }
 
   // Crear nueva notificación
@@ -305,12 +342,12 @@ class NotificationService {
     };
   }
 
-  // Limpiar recursos
+  // Limpiar recursos - MEJORADO
   void dispose() {
     _notificationsSubscription?.cancel();
     _notificationsController?.close();
     _notifications.clear();
     _unreadCount = 0;
-    debugPrint('🧹 NotificationService limpiado');
+    debugPrint('🧹 NotificationService limpiado completamente');
   }
 }

@@ -1,5 +1,5 @@
 // Archivo: lib/screens/chat/chats_list_screen.dart
-// Pantalla para mostrar lista de todas las conversaciones del usuario
+// Pantalla para mostrar lista de todas las conversaciones del usuario - SIN APPBAR DUPLICADO
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +10,12 @@ import '../../widgets/custom_card.dart';
 import 'chat_screen.dart';
 
 class ChatsListScreen extends StatefulWidget {
-  const ChatsListScreen({super.key});
+  final bool showAppBar; // NUEVO: Controlar si mostrar AppBar
+  
+  const ChatsListScreen({
+    super.key,
+    this.showAppBar = false, // Por defecto no mostrar (para uso en tabs)
+  });
 
   @override
   State<ChatsListScreen> createState() => _ChatsListScreenState();
@@ -39,129 +44,137 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Conversaciones'),
-        elevation: 0,
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
-        actions: [
-          // Contador de mensajes no leídos
-          StreamBuilder<int>(
-            stream: _chatService.getTotalUnreadCountStream(currentUserId),
+    final body = Column(
+      children: [
+        // Barra de búsqueda
+        Container(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Buscar conversaciones...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value.toLowerCase();
+              });
+            },
+          ),
+        ),
+
+        // Lista de chats
+        Expanded(
+          child: StreamBuilder<List<ChatModel>>(
+            stream: _chatService.getUserChatsStream(currentUserId),
             builder: (context, snapshot) {
-              final unreadCount = snapshot.data ?? 0;
-              if (unreadCount == 0) return const SizedBox.shrink();
-              
-              return Container(
-                margin: const EdgeInsets.only(right: 16),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  unreadCount > 99 ? '99+' : unreadCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (snapshot.hasError) {
+                return _buildErrorState(snapshot.error.toString());
+              }
+
+              final allChats = snapshot.data ?? [];
+
+              if (allChats.isEmpty) {
+                return _buildEmptyState();
+              }
+
+              // Filtrar chats por búsqueda
+              final filteredChats = _searchQuery.isEmpty
+                  ? allChats
+                  : allChats.where((chat) {
+                      final otherUserName = chat.getOtherParticipantName(currentUserId).toLowerCase();
+                      final projectTitle = (chat.projectTitle ?? '').toLowerCase();
+                      return otherUserName.contains(_searchQuery) ||
+                             projectTitle.contains(_searchQuery);
+                    }).toList();
+
+              if (filteredChats.isEmpty && _searchQuery.isNotEmpty) {
+                return _buildNoResultsState();
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: filteredChats.length,
+                itemBuilder: (context, index) {
+                  final chat = filteredChats[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _ChatListItem(
+                      chat: chat,
+                      currentUserId: currentUserId,
+                      onTap: () => _navigateToChat(chat),
+                    ),
+                  );
+                },
               );
             },
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Barra de búsqueda
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar conversaciones...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                          });
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: Colors.grey[50],
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value.toLowerCase();
-                });
-              },
-            ),
-          ),
+        ),
+      ],
+    );
 
-          // Lista de chats
-          Expanded(
-            child: StreamBuilder<List<ChatModel>>(
-              stream: _chatService.getUserChatsStream(currentUserId),
+    // NUEVO: Condicional para mostrar AppBar o no
+    if (widget.showAppBar) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Conversaciones'),
+          elevation: 0,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
+          actions: [
+            // Contador de mensajes no leídos
+            StreamBuilder<int>(
+              stream: _chatService.getTotalUnreadCountStream(currentUserId),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (snapshot.hasError) {
-                  return _buildErrorState(snapshot.error.toString());
-                }
-
-                final allChats = snapshot.data ?? [];
-
-                if (allChats.isEmpty) {
-                  return _buildEmptyState();
-                }
-
-                // Filtrar chats por búsqueda
-                final filteredChats = _searchQuery.isEmpty
-                    ? allChats
-                    : allChats.where((chat) {
-                        final otherUserName = chat.getOtherParticipantName(currentUserId).toLowerCase();
-                        final projectTitle = (chat.projectTitle ?? '').toLowerCase();
-                        return otherUserName.contains(_searchQuery) ||
-                               projectTitle.contains(_searchQuery);
-                      }).toList();
-
-                if (filteredChats.isEmpty && _searchQuery.isNotEmpty) {
-                  return _buildNoResultsState();
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: filteredChats.length,
-                  itemBuilder: (context, index) {
-                    final chat = filteredChats[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _ChatListItem(
-                        chat: chat,
-                        currentUserId: currentUserId,
-                        onTap: () => _navigateToChat(chat),
-                      ),
-                    );
-                  },
+                final unreadCount = snapshot.data ?? 0;
+                if (unreadCount == 0) return const SizedBox.shrink();
+                
+                return Container(
+                  margin: const EdgeInsets.only(right: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : unreadCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 );
               },
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+        body: body,
+      );
+    } else {
+      // Sin AppBar para uso en tabs
+      return body;
+    }
   }
 
   Widget _buildEmptyState() {

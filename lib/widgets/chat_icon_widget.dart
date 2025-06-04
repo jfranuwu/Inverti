@@ -1,5 +1,5 @@
 // Archivo: lib/widgets/chat_icon_widget.dart
-// Widget para mostrar el ícono de chat con contador de mensajes no leídos
+// Widget para mostrar el ícono de chat con contador - CON MANEJO DE ERRORES MEJORADO
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -32,11 +32,18 @@ class _ChatIconWidgetState extends State<ChatIconWidget> {
 
   void _initializeChatProvider() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = context.read<AuthProvider>();
-      final chatProvider = context.read<ChatProvider>();
+      if (!mounted) return;
       
-      if (authProvider.isAuthenticated && authProvider.user != null) {
-        chatProvider.initializeUserChats(authProvider.user!.uid);
+      try {
+        final authProvider = context.read<AuthProvider>();
+        final chatProvider = context.read<ChatProvider>();
+        
+        if (authProvider.isAuthenticated && authProvider.user != null) {
+          chatProvider.initializeUserChats(authProvider.user!.uid);
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error inicializando ChatProvider en ChatIconWidget: $e');
+        // No es crítico, continuar sin chat
       }
     });
   }
@@ -178,7 +185,7 @@ class _ChatIconWidgetState extends State<ChatIconWidget> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const ChatsListScreen(),
+        builder: (_) => const ChatsListScreen(showAppBar: true),
       ),
     );
   }
@@ -261,7 +268,7 @@ class ChatAppBarAction extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const ChatsListScreen(),
+              builder: (_) => const ChatsListScreen(showAppBar: true),
             ),
           );
         },
@@ -289,7 +296,7 @@ class ChatFloatingActionButton extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const ChatsListScreen(),
+                    builder: (_) => const ChatsListScreen(showAppBar: true),
                   ),
                 );
               },
@@ -333,7 +340,7 @@ class ChatFloatingActionButton extends StatelessWidget {
   }
 }
 
-// Mixin para inicializar ChatProvider automáticamente
+// Mixin para inicializar ChatProvider automáticamente - CON MANEJO DE ERRORES
 mixin ChatProviderInitializer<T extends StatefulWidget> on State<T> {
   @override
   void initState() {
@@ -343,11 +350,19 @@ mixin ChatProviderInitializer<T extends StatefulWidget> on State<T> {
 
   void _initializeChatProvider() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = context.read<AuthProvider>();
-      final chatProvider = context.read<ChatProvider>();
+      if (!mounted) return;
       
-      if (authProvider.isAuthenticated && authProvider.user != null) {
-        chatProvider.initializeUserChats(authProvider.user!.uid);
+      try {
+        final authProvider = context.read<AuthProvider>();
+        final chatProvider = context.read<ChatProvider>();
+        
+        if (authProvider.isAuthenticated && authProvider.user != null) {
+          chatProvider.initializeUserChats(authProvider.user!.uid);
+          debugPrint('✅ ChatProvider inicializado desde mixin');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error inicializando ChatProvider desde mixin: $e');
+        // No es crítico, continuar sin chat
       }
     });
   }

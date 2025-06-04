@@ -1,5 +1,5 @@
 // Archivo: lib/main.dart
-// Punto de entrada principal de la aplicación Inverti con FCM integrado - ACTUALIZADO CON CHAT
+// Punto de entrada principal - CON REGISTRO DE PROVIDERS PARA LIMPIEZA
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -133,11 +133,58 @@ class InvertiApp extends StatelessWidget {
           // Modo de tema basado en el provider
           themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           
-          // Pantalla inicial - AuthWrapper (como en tu versión original)
-          home: const AuthWrapper(),
+          // Pantalla inicial - SplashScreen (para manejar onboarding)
+          home: const AppWithProviderRegistration(),
         );
       },
     );
+  }
+}
+
+// NUEVO: Widget que registra providers para limpieza automática
+class AppWithProviderRegistration extends StatefulWidget {
+  const AppWithProviderRegistration({super.key});
+
+  @override
+  State<AppWithProviderRegistration> createState() => _AppWithProviderRegistrationState();
+}
+
+class _AppWithProviderRegistrationState extends State<AppWithProviderRegistration> {
+  @override
+  void initState() {
+    super.initState();
+    
+    // Registrar providers para limpieza después del primer build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _registerProvidersForCleanup();
+    });
+  }
+
+  void _registerProvidersForCleanup() {
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final chatProvider = context.read<ChatProvider>();
+      final projectProvider = context.read<ProjectProvider>();
+      final notificationService = NotificationService(); // Singleton
+      
+      // Registrar providers en AuthProvider para limpieza automática
+      authProvider.registerProvidersForCleanup(
+        chatProvider: chatProvider,
+        projectProvider: projectProvider,
+        notificationService: notificationService,
+      );
+      
+      debugPrint('✅ Providers registrados para limpieza automática en logout');
+      
+    } catch (e) {
+      debugPrint('⚠️ Error registrando providers para limpieza: $e');
+      // No es crítico, la app puede funcionar sin esto
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const SplashScreen();
   }
 }
 
