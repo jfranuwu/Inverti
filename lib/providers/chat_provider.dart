@@ -1,5 +1,5 @@
 // Archivo: lib/providers/chat_provider.dart
-// Provider para manejo de estado de chats y mensajes - CON LIMPIEZA MEJORADA
+// Provider para manejo de estado de chats y mensajes - CORREGIDO PARA LOGOUT SEGURO
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -17,6 +17,10 @@ class ChatProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   int _totalUnreadCount = 0;
+  
+  // NUEVO: Flag para prevenir operaciones durante logout
+  bool _isClearing = false;
+  String? _currentUserId; // Para tracking del usuario actual
 
   // Getters
   List<ChatModel> get userChats => _userChats;
@@ -24,6 +28,9 @@ class ChatProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   int get totalUnreadCount => _totalUnreadCount;
+
+  // NUEVO: Getter para verificar si está limpiando
+  bool get isClearing => _isClearing;
 
   // Obtener mensajes de un chat específico
   List<MessageModel> getChatMessages(String chatId) {
@@ -39,46 +46,82 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
-  // Inicializar chats del usuario
+  // CORREGIDO: Inicializar chats del usuario con protección
   Future<void> initializeUserChats(String userId) async {
+    // No inicializar si estamos limpiando
+    if (_isClearing) {
+      debugPrint('🚫 ChatProvider en proceso de limpieza, saltando inicialización');
+      return;
+    }
+
     try {
+      debugPrint('🚀 ChatProvider - Inicializando chats para usuario: $userId');
+      _currentUserId = userId;
       _setLoading(true);
       _error = null;
 
       // Limpiar suscripciones anteriores
       await _clearAllSubscriptions();
 
-      // Escuchar chats del usuario
+      // NUEVO: Verificar otra vez si no estamos limpiando después del delay
+      if (_isClearing) {
+        debugPrint('🚫 Limpieza iniciada durante inicialización, abortando');
+        return;
+      }
+
+      // Escuchar chats del usuario con manejo de errores mejorado
       _chatSubscriptions['user_chats'] = _chatService
           .getUserChatsStream(userId)
           .listen(
         (chats) {
-          _userChats = chats;
-          _updateTotalUnreadCount(userId);
-          _setLoading(false);
-          notifyListeners();
+          // Solo procesar si no estamos limpiando
+          if (!_isClearing && _currentUserId == userId) {
+            _userChats = chats;
+            _updateTotalUnreadCount(userId);
+            _setLoading(false);
+            notifyListeners();
+          }
         },
         onError: (error) {
-          _setError('Error cargando chats: $error');
-          _setLoading(false);
+          // Solo manejar errores si no estamos limpiando
+          if (!_isClearing) {
+            debugPrint('❌ Error en stream de chats: $error');
+            _setError('Error cargando chats: $error');
+            _setLoading(false);
+          }
         },
+        cancelOnError: false, // No cancelar automáticamente en error
       );
 
-      // Escuchar contador total de no leídos
+      // Escuchar contador total de no leídos con protección
       _chatSubscriptions['unread_count'] = _chatService
           .getTotalUnreadCountStream(userId)
           .listen(
         (count) {
-          _totalUnreadCount = count;
-          notifyListeners();
+          // Solo procesar si no estamos limpiando
+          if (!_isClearing && _currentUserId == userId) {
+            _totalUnreadCount = count;
+            notifyListeners();
+          }
         },
         onError: (error) {
-          debugPrint('Error obteniendo contador de no leídos: $error');
+          // Solo manejar errores si no estamos limpiando
+          if (!_isClearing) {
+            debugPrint('❌ Error obteniendo contador de no leídos: $error');
+            // No setear error para este stream ya que no es crítico
+          }
         },
+        cancelOnError: false,
       );
+
+      debugPrint('✅ ChatProvider inicializado correctamente');
+      
     } catch (e) {
-      _setError('Error inicializando chats: $e');
-      _setLoading(false);
+      if (!_isClearing) {
+        debugPrint('❌ Error inicializando ChatProvider: $e');
+        _setError('Error inicializando chats: $e');
+        _setLoading(false);
+      }
     }
   }
 
@@ -93,6 +136,8 @@ class ChatProvider with ChangeNotifier {
     String? projectId,
     String? projectTitle,
   }) async {
+    if (_isClearing) return null;
+
     try {
       _setLoading(true);
       _error = null;
@@ -110,7 +155,7 @@ class ChatProvider with ChangeNotifier {
 
       _setLoading(false);
       
-      if (chatId != null) {
+      if (chatId != null && !_isClearing) {
         // Inicializar mensajes del chat si es nuevo
         _initializeChatMessages(chatId);
         notifyListeners();
@@ -118,41 +163,51 @@ class ChatProvider with ChangeNotifier {
 
       return chatId;
     } catch (e) {
-      _setError('Error creando/obteniendo chat: $e');
-      _setLoading(false);
+      if (!_isClearing) {
+        _setError('Error creando/obteniendo chat: $e');
+        _setLoading(false);
+      }
       return null;
     }
   }
 
-  // Inicializar mensajes de un chat específico
+  // CORREGIDO: Inicializar mensajes de un chat específico con protección
   void _initializeChatMessages(String chatId) {
+    if (_isClearing) return;
+
     // Cancelar suscripción anterior si existe
     _messageSubscriptions[chatId]?.cancel();
 
-    // Crear nueva suscripción
+    // Crear nueva suscripción con protección
     _messageSubscriptions[chatId] = _chatService
         .getChatMessagesStream(chatId)
         .listen(
       (messages) {
-        _chatMessages[chatId] = messages;
-        notifyListeners();
+        // Solo procesar si no estamos limpiando
+        if (!_isClearing) {
+          _chatMessages[chatId] = messages;
+          notifyListeners();
+        }
       },
       onError: (error) {
-        debugPrint('Error cargando mensajes del chat $chatId: $error');
+        if (!_isClearing) {
+          debugPrint('❌ Error cargando mensajes del chat $chatId: $error');
+        }
       },
+      cancelOnError: false,
     );
   }
 
   // Cargar mensajes de un chat
   Future<void> loadChatMessages(String chatId) async {
-    if (_chatMessages.containsKey(chatId)) {
-      return; // Ya están cargados
+    if (_isClearing || _chatMessages.containsKey(chatId)) {
+      return; // Ya están cargados o estamos limpiando
     }
 
     _initializeChatMessages(chatId);
   }
 
-  // Enviar mensaje
+  // Enviar mensaje con protección
   Future<bool> sendMessage({
     required String chatId,
     required String senderId,
@@ -161,6 +216,8 @@ class ChatProvider with ChangeNotifier {
     MessageType type = MessageType.text,
     Map<String, dynamic>? metadata,
   }) async {
+    if (_isClearing) return false;
+
     try {
       final success = await _chatService.sendMessage(
         chatId: chatId,
@@ -171,54 +228,68 @@ class ChatProvider with ChangeNotifier {
         metadata: metadata,
       );
 
-      if (success) {
+      if (success && !_isClearing) {
         // El mensaje se actualizará automáticamente a través del stream
         notifyListeners();
       }
 
       return success;
     } catch (e) {
-      _setError('Error enviando mensaje: $e');
+      if (!_isClearing) {
+        _setError('Error enviando mensaje: $e');
+      }
       return false;
     }
   }
 
-  // Marcar mensajes como leídos
+  // Marcar mensajes como leídos con protección
   Future<bool> markMessagesAsRead(String chatId, String userId) async {
+    if (_isClearing) return false;
+
     try {
       final success = await _chatService.markMessagesAsRead(
         chatId: chatId,
         userId: userId,
       );
 
-      if (success) {
+      if (success && !_isClearing) {
         // Los contadores se actualizarán automáticamente a través de los streams
         notifyListeners();
       }
 
       return success;
     } catch (e) {
-      debugPrint('Error marcando mensajes como leídos: $e');
+      if (!_isClearing) {
+        debugPrint('Error marcando mensajes como leídos: $e');
+      }
       return false;
     }
   }
 
   // Buscar chats
   Future<List<ChatModel>> searchChats(String userId, String query) async {
+    if (_isClearing) return [];
+
     try {
       return await _chatService.searchChats(userId, query);
     } catch (e) {
-      _setError('Error buscando chats: $e');
+      if (!_isClearing) {
+        _setError('Error buscando chats: $e');
+      }
       return [];
     }
   }
 
   // Obtener estadísticas de chat
   Future<Map<String, int>> getChatStats(String userId) async {
+    if (_isClearing) return {};
+
     try {
       return await _chatService.getChatStats(userId);
     } catch (e) {
-      debugPrint('Error obteniendo estadísticas de chat: $e');
+      if (!_isClearing) {
+        debugPrint('Error obteniendo estadísticas de chat: $e');
+      }
       return {};
     }
   }
@@ -229,6 +300,8 @@ class ChatProvider with ChangeNotifier {
     required String userId2,
     String? projectId,
   }) async {
+    if (_isClearing) return null;
+
     try {
       return await _chatService.getChatBetweenUsers(
         userId1: userId1,
@@ -236,13 +309,17 @@ class ChatProvider with ChangeNotifier {
         projectId: projectId,
       );
     } catch (e) {
-      debugPrint('Error verificando chat existente: $e');
+      if (!_isClearing) {
+        debugPrint('Error verificando chat existente: $e');
+      }
       return null;
     }
   }
 
   // Actualizar contador total de no leídos
   void _updateTotalUnreadCount(String userId) {
+    if (_isClearing) return;
+
     int total = 0;
     for (final chat in _userChats) {
       total += chat.getUnreadCountForUser(userId);
@@ -252,18 +329,20 @@ class ChatProvider with ChangeNotifier {
 
   // Obtener chat más reciente
   ChatModel? getMostRecentChat() {
-    if (_userChats.isEmpty) return null;
+    if (_userChats.isEmpty || _isClearing) return null;
     
     return _userChats.first; // Ya están ordenados por updatedAt descendente
   }
 
   // Obtener chats con mensajes no leídos
   List<ChatModel> getUnreadChats(String userId) {
+    if (_isClearing) return [];
     return _userChats.where((chat) => chat.hasUnreadMessages(userId)).toList();
   }
 
   // Obtener chats por tipo de participante
   List<ChatModel> getChatsByParticipantType(String currentUserId, String participantType) {
+    if (_isClearing) return [];
     return _userChats.where((chat) {
       final otherUserType = chat.getOtherParticipantType(currentUserId);
       return otherUserType == participantType;
@@ -272,11 +351,13 @@ class ChatProvider with ChangeNotifier {
 
   // Obtener chats relacionados con proyectos
   List<ChatModel> getProjectChats() {
+    if (_isClearing) return [];
     return _userChats.where((chat) => chat.projectId != null).toList();
   }
 
   // Obtener último mensaje de un chat
   MessageModel? getLastMessage(String chatId) {
+    if (_isClearing) return null;
     final messages = _chatMessages[chatId];
     if (messages == null || messages.isEmpty) return null;
     
@@ -285,12 +366,15 @@ class ChatProvider with ChangeNotifier {
 
   // Verificar si un chat tiene mensajes
   bool chatHasMessages(String chatId) {
+    if (_isClearing) return false;
     final messages = _chatMessages[chatId];
     return messages != null && messages.isNotEmpty;
   }
 
   // Obtener resumen de actividad reciente
   Map<String, dynamic> getRecentActivity(String userId) {
+    if (_isClearing) return {};
+    
     final now = DateTime.now();
     final last24Hours = now.subtract(const Duration(hours: 24));
     
@@ -316,72 +400,112 @@ class ChatProvider with ChangeNotifier {
     };
   }
 
-  // Limpiar todas las suscripciones - MEJORADO CON DEBUG
+  // CORREGIDO: Limpiar todas las suscripciones de manera más robusta
   Future<void> _clearAllSubscriptions() async {
-    debugPrint('🧹 Limpiando ${_messageSubscriptions.length} suscripciones de mensajes...');
-    for (final subscription in _messageSubscriptions.values) {
-      await subscription.cancel();
-    }
+    debugPrint('🧹 ChatProvider - Iniciando limpieza de suscripciones...');
+    
+    // Cancelar suscripciones de mensajes
+    final messageSubsToCancel = [..._messageSubscriptions.values];
     _messageSubscriptions.clear();
-
-    debugPrint('🧹 Limpiando ${_chatSubscriptions.length} suscripciones de chats...');
-    for (final subscription in _chatSubscriptions.values) {
-      await subscription.cancel();
+    
+    for (final subscription in messageSubsToCancel) {
+      try {
+        await subscription.cancel();
+      } catch (e) {
+        debugPrint('⚠️ Error cancelando suscripción de mensaje: $e');
+      }
     }
+    
+    debugPrint('🧹 Canceladas ${messageSubsToCancel.length} suscripciones de mensajes');
+
+    // Cancelar suscripciones de chats
+    final chatSubsToCancel = [..._chatSubscriptions.values];
     _chatSubscriptions.clear();
     
+    for (final subscription in chatSubsToCancel) {
+      try {
+        await subscription.cancel();
+      } catch (e) {
+        debugPrint('⚠️ Error cancelando suscripción de chat: $e');
+      }
+    }
+    
+    debugPrint('🧹 Canceladas ${chatSubsToCancel.length} suscripciones de chats');
     debugPrint('✅ Todas las suscripciones de ChatProvider canceladas');
   }
 
-  // Limpiar datos del usuario (logout) - MEJORADO CON DEBUG
+  // CORREGIDO: Limpiar datos del usuario (logout) de manera más robusta
   Future<void> clearUserData() async {
+    debugPrint('🧹 ChatProvider - Iniciando limpieza completa...');
+    
+    // Marcar como limpiando para prevenir nuevas operaciones
+    _isClearing = true;
+    
     try {
-      debugPrint('🧹 Limpiando datos de ChatProvider...');
-      
+      // Limpiar suscripciones primero
       await _clearAllSubscriptions();
       
+      // Limpiar datos
       _userChats.clear();
       _chatMessages.clear();
       _totalUnreadCount = 0;
       _error = null;
       _isLoading = false;
+      _currentUserId = null;
       
       debugPrint('✅ ChatProvider completamente limpiado');
       
+      // Notificar cambios antes de resetear el flag
       notifyListeners();
       
     } catch (e) {
       debugPrint('❌ Error limpiando ChatProvider: $e');
       // No lanzar error para no bloquear el logout
+    } finally {
+      // Resetear flag de limpieza después de un pequeño delay
+      // para asegurar que no hay operaciones pendientes
+      await Future.delayed(const Duration(milliseconds: 100));
+      _isClearing = false;
     }
   }
 
-  // Métodos de utilidad
+  // Métodos de utilidad con protección
   void _setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
+    if (!_isClearing) {
+      _isLoading = loading;
+      notifyListeners();
+    }
   }
 
   void _setError(String? error) {
-    _error = error;
-    notifyListeners();
+    if (!_isClearing) {
+      _error = error;
+      notifyListeners();
+    }
   }
 
   // Limpiar error
   void clearError() {
-    _error = null;
-    notifyListeners();
+    if (!_isClearing) {
+      _error = null;
+      notifyListeners();
+    }
   }
 
-  // Refrescar chats
+  // Refrescar chats con protección
   Future<void> refreshChats(String userId) async {
+    if (_isClearing) return;
+    
     await clearUserData();
+    // Pequeño delay para asegurar que la limpieza terminó
+    await Future.delayed(const Duration(milliseconds: 200));
     await initializeUserChats(userId);
   }
 
   @override
   void dispose() {
     debugPrint('🧹 ChatProvider dispose() llamado');
+    _isClearing = true;
     _clearAllSubscriptions();
     super.dispose();
   }

@@ -1,5 +1,5 @@
-// Archivo: lib/providers/auth_provider.dart
-// Provider para gestión de autenticación - CON LIMPIEZA DE OTROS PROVIDERS
+//lib\providers\auth_provider.dart
+// Provider para gestión de autenticación con limpieza mejorada de otros providers
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,14 +20,13 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _mounted = true;
-  bool _isSigningOut = false; // Para prevenir operaciones durante logout
+  bool _isSigningOut = false;
   
-  // NUEVO: Referencias a otros providers para limpieza
+  // Referencias a otros providers para limpieza
   dynamic _chatProvider;
   dynamic _projectProvider;
   dynamic _notificationService;
   
-  // Subscripción al stream de autenticación
   StreamSubscription<User?>? _authStateSubscription;
   
   // Getters
@@ -37,15 +36,14 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isAuthenticated => _user != null && !_isSigningOut;
   bool get mounted => _mounted;
-  
-  // NUEVO: Getter para verificación de email
+  bool get isSigningOut => _isSigningOut;
   bool get isEmailVerified => _user?.emailVerified ?? false;
   
   AuthProvider() {
     _initializeAuthListener();
   }
   
-  // NUEVO: Registrar otros providers para limpieza en logout
+  // Registrar otros providers para limpieza en logout
   void registerProvidersForCleanup({
     dynamic chatProvider,
     dynamic projectProvider,
@@ -57,15 +55,22 @@ class AuthProvider extends ChangeNotifier {
     debugPrint('✅ Providers registrados para limpieza en logout');
   }
   
-  // Inicializar listener de autenticación de forma controlada
+  // Inicializar listener de autenticación
   void _initializeAuthListener() {
+    _authStateSubscription?.cancel();
+    
+    debugPrint('🎧 Inicializando auth state listener...');
+    
     _authStateSubscription = _auth.authStateChanges().listen(
       _onAuthStateChanged,
       onError: (error) {
         debugPrint('❌ Error en auth state listener: $error');
-        _error = 'Error de autenticación: $error';
-        if (_mounted && !_isSigningOut) {
-          notifyListeners();
+        
+        if (!_isSigningOut) {
+          _error = 'Error de autenticación: $error';
+          if (_mounted) {
+            notifyListeners();
+          }
         }
       },
     );
@@ -73,22 +78,21 @@ class AuthProvider extends ChangeNotifier {
   
   @override
   void dispose() {
+    debugPrint('🧹 AuthProvider dispose() llamado');
     _mounted = false;
     _authStateSubscription?.cancel();
     super.dispose();
   }
   
-  // Manejar cambios de estado de autenticación - MEJORADO
+  // Manejar cambios de estado de autenticación
   Future<void> _onAuthStateChanged(User? user) async {
-    // No procesar cambios si estamos en logout o widget no montado
-    if (_isSigningOut || !_mounted) {
-      debugPrint('🚫 Saltando auth state change: isSigningOut=$_isSigningOut, mounted=$_mounted');
+    if (_isSigningOut || !_mounted || _authStateSubscription == null) {
+      debugPrint('🚫 Saltando auth state change: isSigningOut=$_isSigningOut, mounted=$_mounted, hasListener=${_authStateSubscription != null}');
       return;
     }
     
     debugPrint('🔄 Auth state changed: ${user?.uid}, emailVerified: ${user?.emailVerified}');
     
-    // Solo cambiar el usuario si realmente cambió
     if (_user?.uid != user?.uid) {
       _user = user;
       
@@ -96,19 +100,20 @@ class AuthProvider extends ChangeNotifier {
         try {
           await _loadUserData(user.uid);
           
-          // Solo configurar FCM si no estamos haciendo logout
           if (!_isSigningOut && _mounted) {
             await _setupFCMForUser(user.uid);
           }
         } catch (e) {
           debugPrint('❌ Error cargando datos en auth change: $e');
-          _error = 'Error al cargar datos del usuario: $e';
+          
+          if (!_isSigningOut) {
+            _error = 'Error al cargar datos del usuario: $e';
+          }
         }
       } else {
         _userModel = null;
       }
       
-      // Solo notificar si el widget está montado y no estamos haciendo logout
       if (_mounted && !_isSigningOut) {
         notifyListeners();
       }
@@ -140,14 +145,13 @@ class AuthProvider extends ChangeNotifier {
     }
   }
   
-  // Configurar FCM para el usuario - CON VERIFICACIONES ADICIONALES
+  // Configurar FCM para el usuario
   Future<void> _setupFCMForUser(String userId) async {
     if (_isSigningOut || !_mounted) return;
     
     try {
       debugPrint('🔔 Configurando FCM para usuario: $userId');
       
-      // Verificar que FCM esté inicializado
       if (!FCMService().isInitialized) {
         debugPrint('⚠️ FCM Service no está inicializado, saltando configuración');
         return;
@@ -166,7 +170,6 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('❌ Error configurando FCM: $e');
-      // No propagar el error para no afectar el login
     }
   }
   
@@ -209,7 +212,6 @@ class AuthProvider extends ChangeNotifier {
         
         debugPrint('User saved to Firestore');
         
-        // Configurar FCM para nuevo usuario (solo si está montado)
         if (_mounted && !_isSigningOut) {
           await _setupFCMForUser(credential.user!.uid);
         }
@@ -239,7 +241,7 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
   
-  // MODIFICADO: Inicio de sesión con email y contraseña CON VERIFICACIÓN
+  // Inicio de sesión con email y contraseña
   Future<String> signInWithEmail({
     required String email,
     required String password,
@@ -265,7 +267,6 @@ class AuthProvider extends ChangeNotifier {
         _isLoading = false;
         if (_mounted) notifyListeners();
         
-        // NUEVA LÓGICA: Verificar si el email está verificado
         if (!credential.user!.emailVerified) {
           debugPrint('⚠️ Email no verificado, requiere verificación');
           return 'email_not_verified';
@@ -350,7 +351,6 @@ class AuthProvider extends ChangeNotifier {
           debugPrint('Existing user model loaded');
         }
         
-        // Configurar FCM para usuario (solo si está montado)
         if (_mounted && !_isSigningOut) {
           await _setupFCMForUser(userCredential.user!.uid);
         }
@@ -405,7 +405,6 @@ class AuthProvider extends ChangeNotifier {
       
       debugPrint('User type updated successfully in both Firestore and local model');
       
-      // Reconfigurar FCM con el nuevo rol (solo si está montado)
       if (_mounted && !_isSigningOut) {
         await _setupFCMForUser(_user!.uid);
       }
@@ -422,44 +421,64 @@ class AuthProvider extends ChangeNotifier {
     }
   }
   
-  // NUEVO: Limpiar otros providers antes del logout
+  // Limpiar otros providers de manera robusta
   Future<void> _clearOtherProviders() async {
     try {
       debugPrint('🧹 Limpiando otros providers...');
       
-      // Limpiar ChatProvider
-      if (_chatProvider != null) {
-        if (_chatProvider.clearUserData != null) {
-          await _chatProvider.clearUserData();
-          debugPrint('✅ ChatProvider limpiado');
-        }
+      final List<Future<void>> cleanupTasks = [];
+      
+      if (_chatProvider != null && _chatProvider.clearUserData != null) {
+        cleanupTasks.add(
+          Future(() => _chatProvider.clearUserData())
+            .timeout(const Duration(seconds: 3))
+            .catchError((e) {
+              debugPrint('⚠️ Error limpiando ChatProvider: $e');
+              return null;
+            })
+        );
       }
       
-      // Limpiar ProjectProvider  
-      if (_projectProvider != null) {
-        if (_projectProvider.clearOnLogout != null) {
-          await _projectProvider.clearOnLogout();
-          debugPrint('✅ ProjectProvider limpiado');
-        }
+      if (_projectProvider != null && _projectProvider.clearOnLogout != null) {
+        cleanupTasks.add(
+          Future(() => _projectProvider.clearOnLogout())
+            .timeout(const Duration(seconds: 2))
+            .catchError((e) {
+              debugPrint('⚠️ Error limpiando ProjectProvider: $e');
+              return null;
+            })
+        );
       }
       
-      // NUEVO: Limpiar NotificationService
-      if (_notificationService != null) {
-        if (_notificationService.clearOnLogout != null) {
-          await _notificationService.clearOnLogout();
-          debugPrint('✅ NotificationService limpiado');
-        }
+      if (_notificationService != null && _notificationService.clearOnLogout != null) {
+        cleanupTasks.add(
+          Future(() => _notificationService.clearOnLogout())
+            .timeout(const Duration(seconds: 2))
+            .catchError((e) {
+              debugPrint('⚠️ Error limpiando NotificationService: $e');
+              return null;
+            })
+        );
+      }
+      
+      if (cleanupTasks.isNotEmpty) {
+        await Future.wait(cleanupTasks).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('⚠️ Timeout en limpieza de providers - continuando logout');
+            return [];
+          },
+        );
       }
       
       debugPrint('✅ Limpieza de providers completada');
       
     } catch (e) {
       debugPrint('⚠️ Error limpiando providers (no crítico): $e');
-      // No lanzar error para no bloquear el logout
     }
   }
   
-  // LOGOUT MEJORADO - CON LIMPIEZA DE OTROS PROVIDERS
+  // Logout con secuencia corregida
   Future<void> signOut() async {
     if (_isSigningOut) {
       debugPrint('⚠️ Logout ya en progreso, ignorando...');
@@ -467,26 +486,29 @@ class AuthProvider extends ChangeNotifier {
     }
     
     _isSigningOut = true;
-    
+
     try {
       debugPrint('🚪 Iniciando logout seguro...');
       
-      // 1. Pausar listener para evitar conflictos
+      // Cancelar listener inmediatamente
       await _authStateSubscription?.cancel();
+      _authStateSubscription = null;
       
-      // 2. NUEVO: Limpiar otros providers ANTES del auth logout
+      // Limpiar otros providers antes del auth logout
       await _clearOtherProviders();
       
-      // 3. Limpiar FCM de forma segura
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Limpiar FCM de forma segura
       await _safeFCMCleanup();
       
-      // 4. Limpiar estado local
+      // Limpiar estado local antes del logout de Firebase
       _user = null;
       _userModel = null;
       _error = null;
       _isLoading = false;
       
-      // 5. Hacer logout de servicios
+      // Hacer logout de servicios
       await Future.wait([
         _auth.signOut(),
         _googleSignIn.signOut(),
@@ -494,8 +516,8 @@ class AuthProvider extends ChangeNotifier {
       
       debugPrint('✅ Logout completado exitosamente');
       
-      // 6. Reactivar listener después de un delay
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
       if (_mounted) {
         _initializeAuthListener();
       }
@@ -504,14 +526,13 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('❌ Error durante logout: $e');
       _error = 'Error al cerrar sesión: $e';
       
-      // Reactivar listener en caso de error
       if (_mounted) {
+        await Future.delayed(const Duration(milliseconds: 500));
         _initializeAuthListener();
       }
     } finally {
       _isSigningOut = false;
       
-      // Notificar cambios solo si el widget está montado
       if (_mounted) {
         notifyListeners();
       }
@@ -523,19 +544,17 @@ class AuthProvider extends ChangeNotifier {
     try {
       debugPrint('🧹 Iniciando limpieza segura de FCM...');
       
-      // Verificar que FCM esté disponible
       if (!FCMService().isInitialized) {
         debugPrint('⚠️ FCM Service no inicializado, saltando limpieza');
         return;
       }
       
-      // Hacer limpieza con timeout reducido
       await Future.wait([
         FCMService().clearTokenOnLogout(),
         FCMService().unsubscribeFromTopic('new_projects'),
         FCMService().unsubscribeFromTopic('investor_interest'),
       ]).timeout(
-        const Duration(seconds: 3), // Timeout reducido
+        const Duration(seconds: 3),
         onTimeout: () {
           debugPrint('⚠️ Timeout en limpieza FCM - continuando logout');
           return [];
@@ -546,7 +565,6 @@ class AuthProvider extends ChangeNotifier {
       
     } catch (e) {
       debugPrint('⚠️ Error en limpieza FCM (no crítico): $e');
-      // No lanzar error para no bloquear el logout
     }
   }
   
@@ -573,7 +591,7 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
   
-  // MEJORADO: Reenviar email de verificación
+  // Reenviar email de verificación
   Future<bool> resendVerificationEmail() async {
     try {
       if (_user != null && !_user!.emailVerified) {
@@ -724,7 +742,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
   
-  // MEJORADO: Verificar estado de verificación de email
+  // Verificar estado de verificación de email
   Future<void> refreshUser() async {
     if (_isSigningOut) return;
     

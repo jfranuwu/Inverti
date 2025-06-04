@@ -1,5 +1,5 @@
 // Archivo: lib/main.dart
-// Punto de entrada principal - CON REGISTRO DE PROVIDERS PARA LIMPIEZA
+// Punto de entrada simplificado - AuthWrapper maneja toda la navegación
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -7,29 +7,20 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Importaciones de configuración
 import 'config/theme.dart';
 import 'config/firebase_config.dart';
-
-// Importaciones de providers
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/project_provider.dart';
 import 'providers/subscription_provider.dart'; 
-import 'providers/chat_provider.dart'; // NUEVO
-
-// Importaciones de servicios
+import 'providers/chat_provider.dart';
 import 'services/notification_service.dart';
 import 'services/fcm_service.dart';
-
-// Importaciones de pantallas
 import 'screens/splash_screen.dart';
 import 'widgets/auth_wrapper.dart';
 
-// Handler para mensajes en segundo plano
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Verificar si Firebase ya está inicializado de manera más robusta
   if (Firebase.apps.isEmpty) {
     await Firebase.initializeApp(
       options: FirebaseConfig.currentPlatform,
@@ -42,20 +33,15 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   try {
-    // Verificar si Firebase ya está inicializado de manera más robusta
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: FirebaseConfig.currentPlatform,
       );
     }
     
-    // Configurar handler de mensajes en segundo plano para FCM
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    
-    // Inicializar servicios (con manejo de errores)
     await _initializeServices();
     
-    // Configurar SharedPreferences para el tema
     final prefs = await SharedPreferences.getInstance();
     final isDarkMode = prefs.getBool('isDarkMode') ?? false;
     
@@ -63,12 +49,10 @@ void main() async {
       MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider()),
-          ChangeNotifierProvider(
-            create: (_) => ThemeProvider(isDarkMode),
-          ),
+          ChangeNotifierProvider(create: (_) => ThemeProvider(isDarkMode)),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
           ChangeNotifierProvider(create: (_) => SubscriptionProvider()), 
-          ChangeNotifierProvider(create: (_) => ChatProvider()), // NUEVO
+          ChangeNotifierProvider(create: (_) => ChatProvider()),
         ],
         child: const InvertiApp(),
       ),
@@ -76,7 +60,6 @@ void main() async {
   } catch (e) {
     debugPrint('❌ Error crítico en main: $e');
     
-    // En caso de error crítico, ejecutar app con funcionalidad mínima
     runApp(
       MultiProvider(
         providers: [
@@ -84,7 +67,7 @@ void main() async {
           ChangeNotifierProvider(create: (_) => ThemeProvider(false)),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
           ChangeNotifierProvider(create: (_) => SubscriptionProvider()), 
-          ChangeNotifierProvider(create: (_) => ChatProvider()), // NUEVO
+          ChangeNotifierProvider(create: (_) => ChatProvider()),
         ],
         child: const InvertiApp(),
       ),
@@ -92,24 +75,19 @@ void main() async {
   }
 }
 
-// Función auxiliar para inicializar servicios con manejo de errores
 Future<void> _initializeServices() async {
   try {
-    // Inicializar servicios de notificación (método de instancia)
     await NotificationService().initialize();
     debugPrint('✅ NotificationService inicializado');
   } catch (e) {
     debugPrint('⚠️ Error inicializando NotificationService: $e');
-    // NotificationService no es crítico, la app puede funcionar sin él
   }
   
   try {
-    // Inicializar FCM
     await FCMService().initialize();
     debugPrint('✅ FCMService inicializado');
   } catch (e) {
     debugPrint('⚠️ Error inicializando FCMService: $e');
-    // FCM no es crítico, la app puede funcionar sin él
   }
 }
 
@@ -123,93 +101,78 @@ class InvertiApp extends StatelessWidget {
         return MaterialApp(
           title: 'Inverti',
           debugShowCheckedModeBanner: false,
-          
-          // Tema claro personalizado
           theme: AppThemes.lightTheme,
-          
-          // Tema oscuro personalizado
           darkTheme: AppThemes.darkTheme,
-          
-          // Modo de tema basado en el provider
           themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-          
-          // Pantalla inicial - SplashScreen (para manejar onboarding)
-          home: const AppWithProviderRegistration(),
+          home: const AppInitializer(),
         );
       },
     );
   }
 }
 
-// NUEVO: Widget que registra providers para limpieza automática
-class AppWithProviderRegistration extends StatefulWidget {
-  const AppWithProviderRegistration({super.key});
+// Widget que maneja la inicialización y navegación inicial
+class AppInitializer extends StatefulWidget {
+  const AppInitializer({super.key});
 
   @override
-  State<AppWithProviderRegistration> createState() => _AppWithProviderRegistrationState();
+  State<AppInitializer> createState() => _AppInitializerState();
 }
 
-class _AppWithProviderRegistrationState extends State<AppWithProviderRegistration> {
+class _AppInitializerState extends State<AppInitializer> {
+  bool _isInitialized = false;
+  
   @override
   void initState() {
     super.initState();
-    
-    // Registrar providers para limpieza después del primer build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _registerProvidersForCleanup();
-    });
+    _initializeApp();
   }
 
-  void _registerProvidersForCleanup() {
+  Future<void> _initializeApp() async {
     try {
+      // Registrar providers para limpieza
       final authProvider = context.read<AuthProvider>();
       final chatProvider = context.read<ChatProvider>();
       final projectProvider = context.read<ProjectProvider>();
-      final notificationService = NotificationService(); // Singleton
+      final notificationService = NotificationService();
       
-      // Registrar providers en AuthProvider para limpieza automática
       authProvider.registerProvidersForCleanup(
         chatProvider: chatProvider,
         projectProvider: projectProvider,
         notificationService: notificationService,
       );
       
-      debugPrint('✅ Providers registrados para limpieza automática en logout');
+      debugPrint('✅ Providers registrados para limpieza automática');
+      
+      // Mostrar splash por 2 segundos
+      await Future.delayed(const Duration(seconds: 2));
+      
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
       
     } catch (e) {
-      debugPrint('⚠️ Error registrando providers para limpieza: $e');
-      // No es crítico, la app puede funcionar sin esto
+      debugPrint('⚠️ Error inicializando app: $e');
+      
+      // En caso de error, continuar después de 3 segundos
+      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return const SplashScreen();
-  }
-}
-
-// Clase auxiliar para manejo de errores de Firebase (opcional)
-class FirebaseErrorHandler {
-  static void handleFirebaseError(dynamic error) {
-    debugPrint('🔥 Firebase Error: $error');
-    
-    // Aquí puedes agregar lógica adicional como:
-    // - Enviar errores a analytics
-    // - Mostrar mensajes específicos al usuario
-    // - Reintentar operaciones
-  }
-  
-  static Future<bool> isFirebaseAvailable() async {
-    try {
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(
-          options: FirebaseConfig.currentPlatform,
-        );
-      }
-      return true;
-    } catch (e) {
-      debugPrint('❌ Firebase no disponible: $e');
-      return false;
+    if (!_isInitialized) {
+      return const SplashScreen();
     }
+    
+    // Una vez inicializado, AuthWrapper maneja toda la navegación
+    return const AuthWrapper();
   }
 }
