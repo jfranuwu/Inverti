@@ -1,5 +1,5 @@
 // Archivo: lib/main.dart
-// Punto de entrada principal de la aplicación Inverti con FCM integrado - ACTUALIZADO
+// Punto de entrada principal de la aplicación Inverti con FCM integrado - ACTUALIZADO CON CHAT
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -16,6 +16,7 @@ import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/project_provider.dart';
 import 'providers/subscription_provider.dart'; 
+import 'providers/chat_provider.dart'; // NUEVO
 
 // Importaciones de servicios
 import 'services/notification_service.dart';
@@ -67,6 +68,7 @@ void main() async {
           ),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
           ChangeNotifierProvider(create: (_) => SubscriptionProvider()), 
+          ChangeNotifierProvider(create: (_) => ChatProvider()), // NUEVO
         ],
         child: const InvertiApp(),
       ),
@@ -82,6 +84,7 @@ void main() async {
           ChangeNotifierProvider(create: (_) => ThemeProvider(false)),
           ChangeNotifierProvider(create: (_) => ProjectProvider()),
           ChangeNotifierProvider(create: (_) => SubscriptionProvider()), 
+          ChangeNotifierProvider(create: (_) => ChatProvider()), // NUEVO
         ],
         child: const InvertiApp(),
       ),
@@ -130,8 +133,7 @@ class InvertiApp extends StatelessWidget {
           // Modo de tema basado en el provider
           themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           
-          // Pantalla inicial - Splash Screen (como en tu versión original)
-          //home: const SplashScreen(),
+          // Pantalla inicial - AuthWrapper (como en tu versión original)
           home: const AuthWrapper(),
         );
       },

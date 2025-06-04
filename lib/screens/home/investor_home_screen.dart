@@ -1,20 +1,23 @@
 // Archivo: lib/screens/home/investor_home_screen.dart
-// Pantalla principal para inversores - CORREGIDA
+// Pantalla principal para inversores - ACTUALIZADA CON SISTEMA DE CHAT
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/project_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../models/project_model.dart';
 import '../../widgets/custom_card.dart';
 import '../../widgets/investment_progress_card.dart';
 import '../../widgets/notification_badge.dart';
+import '../../widgets/chat_icon_widget.dart';
 import '../project/project_detail_screen.dart';
 import '../profile/profile_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../maps/office_location_screen.dart';
 import '../payments/subscription_plans_screen.dart';
+import '../chat/chats_list_screen.dart';
 
 class InvestorHomeScreen extends StatefulWidget {
   const InvestorHomeScreen({super.key});
@@ -23,11 +26,12 @@ class InvestorHomeScreen extends StatefulWidget {
   State<InvestorHomeScreen> createState() => _InvestorHomeScreenState();
 }
 
-class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
+class _InvestorHomeScreenState extends State<InvestorHomeScreen> 
+    with ChatProviderInitializer {
   int _selectedIndex = 0;
   String _selectedCategory = 'Todas';
   
-  // Páginas del bottom navigation
+  // Páginas del bottom navigation - ACTUALIZADO CON CHAT
   late final List<Widget> _pages;
 
   // Categorías disponibles
@@ -51,6 +55,7 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
     _pages = [
       const _HomeTab(),
       const _PortfolioTab(),
+      const ChatsListScreen(), // NUEVA PANTALLA DE CHAT
       _ExploreTab(
         categories: _categories,
         selectedCategory: _selectedCategory,
@@ -81,6 +86,10 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
           style: const TextStyle(fontFamily: 'Roboto'),
         ),
         actions: [
+          // ÍCONO DE CHAT CON CONTADOR EN APPBAR
+          if (_selectedIndex != 2) // No mostrar en la pantalla de chats
+            const ChatAppBarAction(),
+          
           // Botón de notificaciones con badge
           NotificationBadge(
             count: 3, // Simulado
@@ -101,6 +110,7 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
         children: [
           _pages[0], // HomeTab
           _pages[1], // PortfolioTab
+          _pages[2], // ChatsListScreen - NUEVA
           _ExploreTab(
             categories: _categories,
             selectedCategory: _selectedCategory,
@@ -109,8 +119,8 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
                 _selectedCategory = category;
               });
             },
-          ), // ExploreTab actualizado
-          _pages[3], // ProfileTab
+          ), // ExploreTab
+          _pages[4], // ProfileTab
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -120,23 +130,28 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
             _selectedIndex = index;
           });
         },
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: 'Inicio',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.pie_chart_outline),
             selectedIcon: Icon(Icons.pie_chart),
             label: 'Portfolio',
           ),
+          // NUEVA NAVEGACIÓN DE CHAT CON CONTADOR
           NavigationDestination(
+            icon: ChatBottomNavItem(isSelected: _selectedIndex == 2),
+            label: 'Chats',
+          ),
+          const NavigationDestination(
             icon: Icon(Icons.explore_outlined),
             selectedIcon: Icon(Icons.explore),
             label: 'Explorar',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: 'Perfil',
@@ -151,8 +166,10 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
       case 1:
         return 'Mi Portfolio';
       case 2:
-        return 'Explorar Proyectos';
+        return 'Conversaciones';
       case 3:
+        return 'Explorar Proyectos';
+      case 4:
         return 'Mi Perfil';
       default:
         return 'Inverti';
@@ -160,13 +177,14 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
   }
 }
 
-// Tab de inicio
+// Tab de inicio - ACTUALIZADO CON SECCIÓN DE CHAT
 class _HomeTab extends StatelessWidget {
   const _HomeTab();
 
   @override
   Widget build(BuildContext context) {
     final projectProvider = context.watch<ProjectProvider>();
+    final chatProvider = context.watch<ChatProvider>();
     final projects = projectProvider.allProjects.take(5).toList();
 
     return SingleChildScrollView(
@@ -174,7 +192,11 @@ class _HomeTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Resumen de inversiones
+          // NUEVA SECCIÓN: Resumen de actividad con chats
+          _buildActivitySummary(context, chatProvider),
+          const SizedBox(height: 24),
+          
+          // Resumen de inversiones (original)
           _buildInvestmentSummary(context),
           const SizedBox(height: 24),
           
@@ -188,7 +210,7 @@ class _HomeTab extends StatelessWidget {
               ),
               TextButton(
                 onPressed: () {
-                  // Ir a explorar
+                  // Ir a explorar - cambiar índice a 3 (era 2)
                 },
                 child: const Text('Ver más'),
               ),
@@ -211,49 +233,148 @@ class _HomeTab extends StatelessWidget {
           
           const SizedBox(height: 24),
           
-          // Accesos rápidos
+          // Accesos rápidos - ACTUALIZADO CON CHAT
           Text(
             'Accesos rápidos',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 16),
           
-          Row(
+          // Grid 2x2 con accesos rápidos
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 1.2,
             children: [
-              Expanded(
-                child: _QuickAccessCard(
-                  icon: Icons.location_on,
-                  title: 'Oficinas',
-                  color: Colors.blue,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const OfficeLocationScreen(),
-                      ),
-                    );
-                  },
-                ),
+              // NUEVA TARJETA: Conversaciones
+              _QuickAccessCard(
+                icon: Icons.chat_bubble,
+                title: 'Conversaciones',
+                color: Colors.blue,
+                badge: chatProvider.totalUnreadCount > 0 
+                    ? chatProvider.totalUnreadCount.toString() 
+                    : null,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ChatsListScreen(),
+                    ),
+                  );
+                },
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _QuickAccessCard(
-                  icon: Icons.diamond,
-                  title: 'Premium',
-                  color: Colors.purple,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const SubscriptionPlansScreen(),
-                      ),
-                    );
-                  },
-                ),
+              _QuickAccessCard(
+                icon: Icons.location_on,
+                title: 'Oficinas',
+                color: Colors.green,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const OfficeLocationScreen(),
+                    ),
+                  );
+                },
+              ),
+              _QuickAccessCard(
+                icon: Icons.diamond,
+                title: 'Premium',
+                color: Colors.purple,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SubscriptionPlansScreen(),
+                    ),
+                  );
+                },
+              ),
+              _QuickAccessCard(
+                icon: Icons.analytics,
+                title: 'Estadísticas',
+                color: Colors.orange,
+                onTap: () {
+                  // Ver estadísticas
+                },
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  // NUEVA FUNCIÓN: Resumen de actividad con chats
+  Widget _buildActivitySummary(BuildContext context, ChatProvider chatProvider) {
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.user?.uid;
+    
+    if (currentUserId == null) return const SizedBox.shrink();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Actividad reciente',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (chatProvider.totalUnreadCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${chatProvider.totalUnreadCount} nuevos',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _ActivityItem(
+                  icon: Icons.chat_bubble,
+                  count: chatProvider.userChats.length,
+                  label: 'Conversaciones',
+                  color: Colors.blue,
+                  badge: chatProvider.totalUnreadCount,
+                ),
+                _ActivityItem(
+                  icon: Icons.favorite,
+                  count: 8, // Simulado - proyectos de interés
+                  label: 'Proyectos de interés',
+                  color: Colors.red,
+                ),
+                _ActivityItem(
+                  icon: Icons.pie_chart,
+                  count: 3, // Simulado - inversiones activas
+                  label: 'Inversiones activas',
+                  color: Colors.green,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -298,7 +419,7 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
-// Tab de portfolio
+// Tab de portfolio (sin cambios significativos)
 class _PortfolioTab extends StatelessWidget {
   const _PortfolioTab();
 
@@ -367,7 +488,7 @@ class _PortfolioTab extends StatelessWidget {
   }
 }
 
-// Tab de explorar - CORREGIDO
+// Tab de explorar (sin cambios significativos)
 class _ExploreTab extends StatelessWidget {
   final List<String> categories;
   final String selectedCategory;
@@ -441,7 +562,82 @@ class _ExploreTab extends StatelessWidget {
   }
 }
 
-// Widgets auxiliares
+// NUEVOS WIDGETS
+
+// Widget para mostrar actividad reciente
+class _ActivityItem extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  final String label;
+  final Color color;
+  final int? badge;
+
+  const _ActivityItem({
+    required this.icon,
+    required this.count,
+    required this.label,
+    required this.color,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(icon, color: color, size: 24),
+            
+            if (badge != null && badge! > 0)
+              Positioned(
+                top: -2,
+                right: -6,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 14,
+                    minHeight: 14,
+                  ),
+                  child: Text(
+                    badge! > 99 ? '99+' : badge.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          count.toString(),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Widgets auxiliares (actualizados)
 class _SummaryItem extends StatelessWidget {
   final String label;
   final String value;
@@ -483,12 +679,14 @@ class _QuickAccessCard extends StatelessWidget {
   final String title;
   final Color color;
   final VoidCallback onTap;
+  final String? badge; // NUEVO: Para mostrar contador
 
   const _QuickAccessCard({
     required this.icon,
     required this.title,
     required this.color,
     required this.onTap,
+    this.badge,
   });
 
   @override
@@ -497,23 +695,51 @@ class _QuickAccessCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withOpacity(0.3)),
         ),
-        child: Column(
+        child: Stack(
           children: [
-            Icon(icon, size: 32, color: color),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 32, color: color),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
+            
+            // Badge para mostrar contador
+            if (badge != null)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    badge!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

@@ -1,11 +1,14 @@
 // Archivo: lib/screens/project/interested_investors_screen.dart
-// Pantalla para ver inversores interesados en un proyecto
+// Pantalla para ver inversores interesados en un proyecto - ACTUALIZADA CON CHAT
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/project_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../widgets/custom_card.dart';
+import '../../screens/chat/chat_screen.dart';
 import 'package:intl/intl.dart';
 
 class InterestedInvestorsScreen extends StatefulWidget {
@@ -138,7 +141,9 @@ class _InterestedInvestorsScreenState extends State<InterestedInvestorsScreen> {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _InvestorCard(
                         investor: investor,
-                        onContact: () => _contactInvestor(investor),
+                        projectId: widget.projectId,
+                        projectTitle: widget.projectTitle,
+                        onStartChat: () => _startChatWithInvestor(investor),
                         onViewProfile: () => _viewInvestorProfile(investor),
                       ),
                     );
@@ -258,24 +263,88 @@ class _InterestedInvestorsScreenState extends State<InterestedInvestorsScreen> {
     );
   }
 
-  void _contactInvestor(Map<String, dynamic> investor) {
-    // TODO: Implementar contacto con inversor
-    // Esto podría abrir un chat, email, o WhatsApp
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Contactar Inversor'),
-        content: Text(
-          'Próximamente podrás contactar directamente con ${investor['investorName']}',
+  // 🚀 NUEVA FUNCIÓN: Iniciar chat con inversor
+  Future<void> _startChatWithInvestor(Map<String, dynamic> investor) async {
+    final authProvider = context.read<AuthProvider>();
+    final chatProvider = context.read<ChatProvider>();
+    
+    final currentUser = authProvider.user;
+    final currentUserModel = authProvider.userModel;
+    
+    if (currentUser == null || currentUserModel == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error: Usuario no autenticado'),
+          backgroundColor: Colors.red,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendido'),
+      );
+      return;
+    }
+
+    try {
+      // Mostrar loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Crear o obtener chat existente
+      final chatId = await chatProvider.createOrGetChat(
+        userId1: currentUser.uid,
+        userName1: currentUserModel.name,
+        userType1: currentUserModel.userType,
+        userId2: investor['investorId'],
+        userName2: investor['investorName'],
+        userType2: 'investor',
+        projectId: widget.projectId,
+        projectTitle: widget.projectTitle,
+      );
+
+      // Cerrar loading
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      if (chatId != null) {
+        // Navegar al chat
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                chatId: chatId,
+                otherUserId: investor['investorId'],
+                otherUserName: investor['investorName'],
+              ),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error al crear la conversación'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Cerrar loading si está abierto
+      if (mounted) {
+        Navigator.pop(context);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
           ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 
   void _viewInvestorProfile(Map<String, dynamic> investor) {
@@ -300,12 +369,16 @@ class _InterestedInvestorsScreenState extends State<InterestedInvestorsScreen> {
 
 class _InvestorCard extends StatelessWidget {
   final Map<String, dynamic> investor;
-  final VoidCallback onContact;
+  final String projectId;
+  final String projectTitle;
+  final VoidCallback onStartChat;
   final VoidCallback onViewProfile;
 
   const _InvestorCard({
     required this.investor,
-    required this.onContact,
+    required this.projectId,
+    required this.projectTitle,
+    required this.onStartChat,
     required this.onViewProfile,
   });
 
@@ -409,19 +482,47 @@ class _InvestorCard extends StatelessWidget {
               ),
             ),
 
-            // Botón de contacto
+            // 🚀 BOTONES DE ACCIÓN ACTUALIZADOS
             Column(
               children: [
-                IconButton(
-                  onPressed: onContact,
-                  icon: const Icon(Icons.message_outlined),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                    foregroundColor: Theme.of(context).primaryColor,
+                // Botón de chat (NUEVO)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    onPressed: onStartChat,
+                    icon: const Icon(Icons.chat),
+                    color: Colors.white,
+                    tooltip: 'Iniciar conversación',
                   ),
                 ),
                 Text(
-                  'Contactar',
+                  'Chat',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                // Botón de perfil
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    onPressed: onViewProfile,
+                    icon: const Icon(Icons.person),
+                    color: Colors.grey[700],
+                    tooltip: 'Ver perfil',
+                  ),
+                ),
+                Text(
+                  'Perfil',
                   style: TextStyle(
                     fontSize: 10,
                     color: Colors.grey[600],
